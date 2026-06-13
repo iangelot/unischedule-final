@@ -1,0 +1,46 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-lock.yaml
+
+# Development
+.env.local
+.env.*.local
+.DS_Store
+
+# Build outputs
+dist
+build
+.next
+out
+coverage
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*.sublime-*
+
+# Testing
+.jest
+__tests__
+*.test.js
+*.test.ts
+
+# Documentation
+README.md
+docs/
+
+# CI/CD
+.github
+
+# Temporary files
+.tmp
+temp/
