@@ -3,12 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Plus, Search, Users, Edit2, Trash2, X } from 'lucide-react';
 import { db, performOfflineAction, CAMEROON_SPECIALITIES } from '../db';
+import { specialityLabel } from '../lib/cameroonSpecialities';
 import { badgeDay, badgeEvening } from '../lib/uiBadges';
+import { useLang } from '../hooks/useLang';
 
 const SPECIALITIES = Object.keys(CAMEROON_SPECIALITIES);
 const EMPTY_FORM = { name: '', count: 30, mode: 'day', speciality: '', year: 1 };
 
 export default function Groups() {
+  const { t, lang } = useLang();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal]   = useState(false);
   const [editItem, setEditItem]     = useState(null);
@@ -45,19 +48,19 @@ export default function Groups() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Groupes Étudiants</h2>
-          <p className="text-sm text-muted-foreground mt-1">Gérez les classes, effectifs et filières.</p>
+          <h2 className="text-2xl font-bold text-foreground">{t('grpTitle')}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{t('grpSubtitle')}</p>
         </div>
         <button onClick={openAdd}
           className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm">
-          <Plus className="w-4 h-4" /> Ajouter un groupe
+          <Plus className="w-4 h-4" /> {t('grpAddBtn')}
         </button>
       </div>
 
       <div className="bg-card p-4 rounded-xl border border-border shadow-sm">
         <div className="relative max-w-md">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input type="text" placeholder="Rechercher un groupe..." value={searchTerm}
+          <input type="text" placeholder={t('grpSearchPh')} value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full bg-muted/50 border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
         </div>
@@ -68,21 +71,22 @@ export default function Groups() {
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
               <tr>
-                <th className="px-6 py-4 font-semibold">Groupe</th>
-                <th className="px-6 py-4 font-semibold">Filière</th>
-                <th className="px-6 py-4 font-semibold">Effectif</th>
-                <th className="px-6 py-4 font-semibold">Créneau</th>
-                <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                <th className="px-6 py-4 font-semibold">{t('grpTitle')}</th>
+                <th className="px-6 py-4 font-semibold">{t('cSpeciality')}</th>
+                <th className="px-6 py-4 font-semibold">{t('cLevel')}</th>
+                <th className="px-6 py-4 font-semibold">{t('cSize')}</th>
+                <th className="px-6 py-4 font-semibold">{t('cSlot')}</th>
+                <th className="px-6 py-4 font-semibold text-right">{t('cActions')}</th>
               </tr>
             </thead>
             <tbody>
               {!groups ? (
-                <tr><td colSpan="5" className="px-6 py-8 text-center text-muted-foreground">Chargement...</td></tr>
+                <tr><td colSpan="6" className="px-6 py-8 text-center text-muted-foreground">{t('cLoading')}</td></tr>
               ) : groups.length === 0 ? (
-                <tr><td colSpan="5" className="px-6 py-12 text-center">
+                <tr><td colSpan="6" className="px-6 py-12 text-center">
                   <div className="flex flex-col items-center">
                     <Users className="w-12 h-12 text-muted-foreground/50 mb-3" />
-                    <p className="text-muted-foreground font-medium">Aucun groupe trouvé.</p>
+                    <p className="text-muted-foreground font-medium">{t('grpNone')}</p>
                   </div>
                 </td></tr>
               ) : groups.map(group => (
@@ -95,11 +99,12 @@ export default function Groups() {
                       {group.name}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-muted-foreground text-xs">{group.speciality || '—'}</td>
+                  <td className="px-6 py-4 text-muted-foreground text-xs">{group.speciality ? specialityLabel(group.speciality, lang) : '—'}</td>
+                  <td className="px-6 py-4 text-muted-foreground">{group.year ? `${t('cLevel')} ${group.year}` : '—'}</td>
                   <td className="px-6 py-4 text-muted-foreground">{group.count}</td>
                   <td className="px-6 py-4">
                     <span className={group.mode === 'day' ? badgeDay : badgeEvening}>
-                      {group.mode === 'day' ? 'Jour' : 'Soir'}
+                      {group.mode === 'day' ? t('cDay') : t('cEvening')}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -123,41 +128,41 @@ export default function Groups() {
             <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
               className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-foreground">{editItem ? 'Modifier le groupe' : 'Nouveau groupe'}</h3>
+                <h3 className="text-lg font-bold text-foreground">{editItem ? t('grpEdit') : t('grpNew')}</h3>
                 <button onClick={() => setShowModal(false)} className="p-1 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/50"><X className="w-5 h-5" /></button>
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Nom du groupe *</label>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('grpNameLabel')} *</label>
                   <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
-                    placeholder="ex: GL-3A ou RT-SOIR" className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    placeholder={t('grpNamePh')} className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Filière *</label>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('cSpeciality')} *</label>
                   <select value={form.speciality} onChange={e => setForm(f => ({...f, speciality: e.target.value}))}
                     className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
-                    <option value="">— Choisir une filière —</option>
+                    <option value="">{t('cChooseSpeciality')}</option>
                     {SPECIALITIES.map(s => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s}>{specialityLabel(s, lang)}</option>
                     ))}
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Effectif</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('cSize')}</label>
                     <input type="number" min="1" max="500" value={form.count} onChange={e => setForm(f => ({...f, count: +e.target.value}))}
                       className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Niveau</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('cLevel')}</label>
                     <input type="number" min="1" max="5" value={form.year} onChange={e => setForm(f => ({...f, year: +e.target.value}))}
                       className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Créneau</label>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">{t('cSlot')}</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {[{ v: 'day', l: 'Jour' }, { v: 'evening', l: 'Soir' }].map(({ v, l }) => (
+                    {[{ v: 'day', l: t('cDay') }, { v: 'evening', l: t('cEvening') }].map(({ v, l }) => (
                       <button key={v} type="button" onClick={() => setForm(f => ({...f, mode: v}))}
                         className={`py-2.5 rounded-lg text-sm font-medium border transition-colors ${form.mode === v ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:bg-muted/50'}`}>
                         {l}
@@ -167,10 +172,10 @@ export default function Groups() {
                 </div>
               </div>
               <div className="flex gap-3 mt-6">
-                <button onClick={() => setShowModal(false)} className="flex-1 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50">Annuler</button>
+                <button onClick={() => setShowModal(false)} className="flex-1 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50">{t('cCancel')}</button>
                 <button onClick={handleSave} disabled={saving || !form.name || !form.speciality}
                   className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {saving ? 'Enregistrement...' : editItem ? 'Enregistrer' : 'Ajouter'}
+                  {saving ? t('cSaving') : editItem ? t('cSave') : t('cAdd')}
                 </button>
               </div>
             </motion.div>

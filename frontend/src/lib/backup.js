@@ -1,9 +1,10 @@
 import { db } from '../db';
 
-const TABLES = ['courses', 'lecturers', 'rooms', 'groups', 'sessions', 'exams', 'holidays', 'settings', 'users'];
+// Every Dexie table — IndexedDB is the only copy of the data, so a backup must be complete.
+const TABLES = ['courses', 'lecturers', 'rooms', 'groups', 'sessions', 'exams', 'holidays', 'settings', 'users', 'timetableSnapshots', 'makeups'];
 
 export async function exportBackup() {
-  const data = { version: 2, exportedAt: new Date().toISOString(), tables: {} };
+  const data = { version: 4, exportedAt: new Date().toISOString(), tables: {} };
   for (const table of TABLES) {
     data.tables[table] = await db[table].toArray();
   }

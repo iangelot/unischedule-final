@@ -2,8 +2,23 @@
 
 const HOURS_PER_SLOT = 2;
 
-/** How many timetable slots this course needs each week (≈2h per slot). */
+/**
+ * How many consecutive 2h slots a "block" course occupies in one sitting
+ * (e.g. a 4h block = 2 slots, 08:00–12:00). 1 for normal/split courses.
+ */
+export function blockSlotsForCourse(course) {
+  if (!course?.block) return 1;
+  const h = Number(course?.hoursPerWeek) || HOURS_PER_SLOT;
+  return Math.max(1, Math.round(h / HOURS_PER_SLOT));
+}
+
+/**
+ * How many SESSIONS this course holds each week.
+ * - Split (default): one session per slot, e.g. 4h → 2 sessions of 2h.
+ * - Block: a single session per week covering the whole weekly load.
+ */
 export function sessionsPerWeekForCourse(course) {
+  if (course?.block) return 1;
   const h = Number(course?.hoursPerWeek) || 3;
   return Math.max(1, Math.ceil(h / HOURS_PER_SLOT));
 }
@@ -22,6 +37,7 @@ export function totalSemesterSessions(course, totalWeeks = 35) {
 export function semesterSessionsForWeek(course, weekNum = 1, totalWeeks = 35) {
   const perWeek = sessionsPerWeekForCourse(course);
   const total = totalSemesterSessions(course, totalWeeks);
+  const durationSlots = blockSlotsForCourse(course);
   const week = Math.max(1, Number(weekNum) || 1);
   const start = (week - 1) * perWeek + 1;
   const slots = [];
@@ -34,6 +50,7 @@ export function semesterSessionsForWeek(course, weekNum = 1, totalWeeks = 35) {
       sessionsPerWeek: perWeek,
       semesterSessionNum,
       totalSemesterSessions: total,
+      durationSlots,   // >1 for block courses (consecutive slots)
     });
   }
   return slots;

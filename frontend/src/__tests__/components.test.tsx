@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm, FormField, Form } from '@/hooks/useForm';
 import { Spinner, EmptyState, useToast, Toast } from '@/components/Loading';
@@ -95,6 +95,9 @@ describe('useForm Hook', () => {
       return (
         <form onSubmit={form.handleSubmit}>
           <input name="email" value={form.values.email} onChange={form.handleChange} />
+          {form.errors.map((err) => (
+            <span key={err.field}>{err.message}</span>
+          ))}
           <button type="submit">Submit</button>
         </form>
       );
@@ -336,7 +339,9 @@ describe('usePagination Hook', () => {
     expect(pagination.canPreviousPage).toBe(false);
 
     // Go to last page
-    pagination.goToPage(10);
+    act(() => {
+      pagination.goToPage(10);
+    });
     expect(pagination.canNextPage).toBe(false);
   });
 });
@@ -370,7 +375,7 @@ describe('Pagination Component', () => {
   });
 
   it('should disable previous/next buttons appropriately', () => {
-    const { getByRole } = render(
+    const { getAllByRole } = render(
       <Pagination
         currentPage={1}
         totalPages={5}
@@ -380,7 +385,7 @@ describe('Pagination Component', () => {
       />
     );
 
-    const buttons = getByRole('button');
+    const buttons = getAllByRole('button');
     // First button (Previous) should be disabled
     expect(buttons[0]).toBeDisabled();
   });
@@ -465,7 +470,7 @@ describe('Form + Validation Integration', () => {
       );
     }
 
-    const { getByText, queryByText, getByDisplayValue } = render(<TestForm />);
+    const { getByText, queryByText, getByLabelText } = render(<TestForm />);
 
     // Submit empty form
     await userEvent.click(getByText('Submit'));
@@ -475,7 +480,7 @@ describe('Form + Validation Integration', () => {
     expect(getByText('Password required')).toBeInTheDocument();
 
     // Fill email
-    const emailInput = getByDisplayValue('');
+    const emailInput = getByLabelText('Email');
     await userEvent.type(emailInput, 'test@example.com');
 
     // Error should disappear after filling

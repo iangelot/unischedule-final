@@ -225,15 +225,15 @@ interface PaginatedTableProps<T> {
 export function PaginatedTable<T extends { id?: string; [key: string]: any }>({
   data,
   columns,
-  itemsPerPage = 10,
+  itemsPerPage: initialItemsPerPage = 10,
   isLoading = false,
   onRowClick,
   selectable = false,
   selectedIds = [],
   onSelectionChange,
 }: PaginatedTableProps<T>) {
+  const [itemsPerPage, setItemsPerPage] = React.useState(initialItemsPerPage);
   const pagination = usePagination({ totalItems: data.length, itemsPerPage });
-  const [itemsPerPage, setItemsPerPage] = React.useState(10);
 
   const paginatedData = data.slice(pagination.startIndex, pagination.endIndex);
 

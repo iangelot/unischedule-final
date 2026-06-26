@@ -72,21 +72,21 @@ export default function Login() {
             </div>
 
             <h2 className="text-5xl font-extrabold text-white leading-[1.1] mb-6">
-              Next-Gen <br />
+              {t(lang, 'loginHeroLine1')} <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-300 to-accent-400">
-                Timetable Intelligence
+                {t(lang, 'loginHeroLine2')}
               </span>
             </h2>
 
             <p className="text-primary-200 text-lg mb-10 max-w-md leading-relaxed">
-              Automate complex scheduling constraints natively designed for African educational infrastructure.
+              {t(lang, 'loginHeroDesc')}
             </p>
 
             <div className="space-y-6">
               {[
-                { title: '100% Local',               desc: 'Fonctionne sur votre ordinateur, sans internet ni serveur.' },
-                { title: 'Export PDF → WhatsApp',    desc: 'Générez l\'emploi du temps, exportez en PDF, partagez aux étudiants.' },
-                { title: 'Double-Shift Native',      desc: 'Conçu pour les créneaux Matin & Soir des établissements africains.' },
+                { title: t(lang, 'loginFeat1Title'), desc: t(lang, 'loginFeat1Desc') },
+                { title: t(lang, 'loginFeat2Title'), desc: t(lang, 'loginFeat2Desc') },
+                { title: t(lang, 'loginFeat3Title'), desc: t(lang, 'loginFeat3Desc') },
               ].map((feature, i) => (
                 <motion.div
                   initial={{ opacity: 0, x: -20 }}

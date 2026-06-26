@@ -4,10 +4,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Play, Loader2, CheckCircle2, Download, Printer, RefreshCw,
   AlertCircle, FileSpreadsheet, FileText, ChevronLeft, ChevronRight,
-  GripVertical, Lock, Unlock, CalendarX
+  GripVertical, Lock, Unlock, CalendarX, Trash2, Copy, UserCheck, Layers
 } from 'lucide-react';
 import { db, getSetting, TIME_SLOTS } from '../db';
+import { specialityLabel } from '../lib/cameroonSpecialities';
 import { generateTimetable } from '../scheduler';
+import { diagnoseFeasibility } from '../lib/diagnostics';
 import { exportTimetablePDF } from '../lib/exportPDF';
 import { useAppStore } from '../store/useAppStore';
 import { useLang } from '../hooks/useLang';
@@ -42,6 +44,24 @@ function toISODate(date) {
   return date.toISOString().split('T')[0];
 }
 
+/** Duration of a time slot in hours, e.g. 08:00–10:00 → 2. */
+function slotHours(slotDef) {
+  if (!slotDef?.start || !slotDef?.end) return null;
+  const [sh, sm] = slotDef.start.split(':').map(Number);
+  const [eh, em] = slotDef.end.split(':').map(Number);
+  const mins = (eh * 60 + em) - (sh * 60 + sm);
+  if (!Number.isFinite(mins) || mins <= 0) return null;
+  return Math.round((mins / 60) * 10) / 10; // 1 decimal max
+}
+
+/** Add `hours` to an "HH:MM" time string → "HH:MM". */
+function addHours(time, hours) {
+  if (!time) return time;
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m + Math.round(hours * 60);
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
 // ── Main Component ───────────────────────────────────────────────
 
 export default function Timetable() {
@@ -54,9 +74,11 @@ export default function Timetable() {
   const [status, setStatus]         = useState('idle');
   const [genLog, setGenLog]         = useState([]);
   const [filterGroup, setFilterGroup] = useState('all');
+  const didDefaultGroupRef = useRef(false);
   const [filterMode, setFilterMode] = useState('all'); // all | day | evening
   const [dragSession, setDragSession] = useState(null);
   const [dragOver, setDragOver]     = useState(null);
+  const [missedMenuFor, setMissedMenuFor] = useState(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [snapshotSessions, setSnapshotSessions] = useState(null);
   const [viewLabel, setViewLabel] = useState('');
@@ -106,6 +128,16 @@ export default function Timetable() {
   const isViewingHistory = !!viewArchiveId;
   const isDataReady = courses.length > 0 && groups.length > 0 && lecturers.length > 0 && rooms.length > 0;
 
+  // Feasibility check — explains *why* a week can't be fully scheduled.
+  const diagnostics = React.useMemo(() => (
+    isDataReady && !isViewingHistory
+      ? diagnoseFeasibility({
+          courses, lecturers, rooms, groups, institutionType: instType, numDays,
+          currentWeek: settings.currentWeek || '1', totalWeeks: settings.totalWeeks || '35',
+        }, t)
+      : []
+  ), [isDataReady, isViewingHistory, courses, lecturers, rooms, groups, instType, numDays, settings.currentWeek, settings.totalWeeks, t]);
+
   useEffect(() => {
     if (!viewArchiveId) {
       setSnapshotSessions(null);
@@ -140,6 +172,12 @@ export default function Timetable() {
   const holidayMap = {};
   holidays.forEach(h => { holidayMap[h.date] = h; });
 
+  // Day indices (0 = Monday) that fall on a holiday this week — the generator avoids them.
+  const holidayDays = weekDates.reduce((acc, date, i) => {
+    if (holidayMap[toISODate(date)]) acc.push(i);
+    return acc;
+  }, []);
+
   // ── Generation ─────────────────────────────────────────────────
 
   const handleGenerate = async () => {
@@ -159,8 +197,32 @@ export default function Timetable() {
     await new Promise(r => setTimeout(r, 600));
     log(`📚 Chargé: ${courses.length} cours · ${groups.length} groupes · ${lecturers.length} enseignants · ${rooms.length} salles`);
     await new Promise(r => setTimeout(r, 500));
+    if (holidayDays.length) {
+      const names = holidayDays.map(i => holidayMap[toISODate(weekDates[i])]?.[lang === 'fr' ? 'name_fr' : 'name_en']).filter(Boolean);
+      log(`🏖 Jours fériés évités cette semaine: ${names.join(', ')}`);
+      await new Promise(r => setTimeout(r, 400));
+    }
+    if (diagnostics.length) {
+      const blockers = diagnostics.filter(d => d.severity === 'error').length;
+      log(`⚠ ${diagnostics.length} ${lang === 'fr' ? 'point(s) de vigilance' : 'feasibility issue(s)'}${blockers ? ` · ${blockers} ${lang === 'fr' ? 'bloquant(s)' : 'blocking'}` : ''}`);
+      await new Promise(r => setTimeout(r, 400));
+    }
     log('🔀 Génération de la population initiale (50 chromosomes)...');
     await new Promise(r => setTimeout(r, 800));
+
+    // Makeup ("rattrapage") backlog owed to this week's groups.
+    const weekNum = Number(settings.currentWeek) || 1;
+    const groupIds = new Set(groups.map(g => g.id));
+    const allMakeups = await db.makeups.toArray();
+    const pendingMakeups = allMakeups.filter(m =>
+      groupIds.has(m.groupId) &&
+      (m.rescheduledWeek === weekNum ||
+        (m.status === 'pending' && weekNum > (Number(m.missedWeek) || 0)))
+    );
+    if (pendingMakeups.length) {
+      log(`🔁 ${pendingMakeups.length} séance(s) de rattrapage à replanifier...`);
+      await new Promise(r => setTimeout(r, 400));
+    }
 
     try {
       const result = await new Promise(resolve => {
@@ -168,6 +230,8 @@ export default function Timetable() {
           const r = generateTimetable(courses, lecturers, rooms, groups, instType, numDays, {
             currentWeek: settings.currentWeek || '1',
             totalWeeks: settings.totalWeeks || '35',
+            holidayDays,
+            makeups: pendingMakeups,
           });
           resolve(r);
         }, 100);
@@ -181,6 +245,18 @@ export default function Timetable() {
       if (result && result.length > 0) {
         await db.sessions.clear();
         await db.sessions.bulkAdd(result);
+
+        // Tie injected makeups to this week so re-generating keeps them but
+        // advancing past this week drains them from the backlog.
+        const placedMakeupIds = new Set(result.filter(s => s.isMakeup).map(s => s.makeupId));
+        for (const m of pendingMakeups) {
+          if (placedMakeupIds.has(m.id) && m.status === 'pending') {
+            await db.makeups.update(m.id, { status: 'rescheduled', rescheduledWeek: weekNum });
+          }
+        }
+        if (placedMakeupIds.size) {
+          log(`➕ ${placedMakeupIds.size} séance(s) de rattrapage ajoutée(s) cette semaine`);
+        }
         let snapId = null;
         try {
           snapId = await saveTimetableSnapshot({
@@ -257,6 +333,88 @@ export default function Timetable() {
     await db.sessions.update(session.id, { locked: !session.locked });
   }, []);
 
+  const handleDeleteSession = useCallback(async (session) => {
+    const course = courseMap[session.courseId];
+    const label = course?.code || session.courseId;
+    if (!window.confirm(t('ttConfirmDeleteSession', label))) return;
+    await db.sessions.delete(session.id);
+  }, [courseMap, t]);
+
+  // Duplicate a session into the first cell (across the whole week, in the
+  // session's mode) where its group, lecturer and room are all free — so the
+  // copy lands clash-free; the user can then drag it anywhere. Falls back to the
+  // original cell only if the week is genuinely full on all three axes.
+  const handleCopySession = useCallback(async (session) => {
+    const dayCount = (instType === 'secondary' ? TIME_SLOTS.secondary : TIME_SLOTS.university).filter(s => !s.isBreak).length;
+    const eveCount = instType === 'secondary' ? 0 : TIME_SLOTS.evening.length;
+    const modeSlots = session.mode === 'evening'
+      ? Array.from({ length: eveCount }, (_, i) => dayCount + i)
+      : Array.from({ length: dayCount }, (_, i) => i);
+
+    // Read current sessions fresh (not the possibly-stale render closure) so
+    // placement is always based on the real occupancy at click time.
+    const current = await db.sessions.toArray();
+    const clashesAt = (day, slot) => current.some(s =>
+      s.id !== session.id && s.day === day && s.slot === slot && (
+        (s.groups || []).some(g => (session.groups || []).includes(g)) ||
+        (session.lecId && s.lecId === session.lecId) ||
+        (session.roomId && s.roomId === session.roomId)
+      )
+    );
+
+    let target = { day: session.day, slot: session.slot };
+    outer:
+    for (let d = 0; d < numDays; d++) {
+      for (const slot of modeSlots) {
+        if (!clashesAt(d, slot)) { target = { day: d, slot }; break outer; }
+      }
+    }
+
+    const copy = {
+      ...session,
+      id: `copy_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      day: target.day,
+      slot: target.slot,
+      locked: false,
+      status: null,
+      isMakeup: false,
+    };
+    delete copy.makeupId;
+    await db.sessions.add(copy);
+  }, [numDays, instType]);
+
+  // Mark a session as missed. withMakeup=true adds it to the rattrapage backlog
+  // (carried into a later week's generation); false just records the absence.
+  const markMissed = useCallback(async (session, withMakeup) => {
+    setMissedMenuFor(null);
+    await db.sessions.update(session.id, { status: 'missed' });
+    if (withMakeup) {
+      await db.makeups.add({
+        courseId: session.courseId,
+        groupId: session.groups?.[0],
+        lecId: session.lecId,
+        sessionNum: session.sessionNum ?? null,
+        totalSessions: session.totalSessions ?? null,
+        missedWeek: Number(settings.currentWeek) || 1,
+        missedDate: toISODate(weekDates[session.day] || weekMonday),
+        createdAt: Date.now(),
+        status: 'pending',
+        rescheduledWeek: null,
+      });
+    }
+  }, [settings.currentWeek, weekDates, weekMonday]);
+
+  const unmarkMissed = useCallback(async (session) => {
+    setMissedMenuFor(null);
+    await db.sessions.update(session.id, { status: null });
+    // Drop any still-pending makeup created for this session.
+    const pending = await db.makeups
+      .where('groupId').equals(session.groups?.[0] || '')
+      .and(m => m.courseId === session.courseId && m.sessionNum === session.sessionNum && m.status === 'pending')
+      .toArray();
+    for (const m of pending) await db.makeups.delete(m.id);
+  }, []);
+
   // ── Filtering ──────────────────────────────────────────────────
 
   const filteredSessions = React.useMemo(() => {
@@ -303,6 +461,20 @@ export default function Timetable() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Default to a single clean class view (lowest level first) once data loads —
+  // the "Tous" overview stacks every class per cell and reads like a clash.
+  // Runs once; the user can still switch to "Tous" or any other class freely.
+  useEffect(() => {
+    if (didDefaultGroupRef.current) return;
+    if (!isViewingHistory && sessions.length > 0 && groups.length > 0) {
+      didDefaultGroupRef.current = true;
+      const first = [...groups].sort((a, b) => (a.year || 0) - (b.year || 0) || a.name.localeCompare(b.name))[0];
+      // Intentional one-time default once data loads (ref-guarded, runs once).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (first) setFilterGroup(first.id);
+    }
+  }, [sessions.length, groups, isViewingHistory]);
+
   // ── PDF Export (IUGET format) ──────────────────────────────────
 
   const [exporting, setExporting] = useState(false);
@@ -327,6 +499,49 @@ export default function Timetable() {
         allSlots,
         fullSlots,
         lang,
+        generatedBy: user?.fullName || null,
+      });
+      setShareHint(true);
+      setTimeout(() => setShareHint(false), 10000);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // One PDF with a clean page per class, ordered by level — for handing each
+  // cohort/level its own sheet (WhatsApp-ready).
+  const exportAllLevels = async () => {
+    setExporting(true);
+    setShowExportMenu(false);
+    try {
+      const ordered = [...groups].sort((a, b) => (a.year || 0) - (b.year || 0) || a.name.localeCompare(b.name));
+      await exportTimetablePDF({
+        sessions, groups, courses, lecturers, rooms, holidays, settings,
+        perGroupIds: ordered.map(g => g.id),
+        weekMonday, numDays, allSlots, fullSlots, lang,
+        generatedBy: user?.fullName || null,
+      });
+      setShareHint(true);
+      setTimeout(() => setShareHint(false), 10000);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // One PDF with a clean page per teacher (cells show course · class · room) —
+  // for handing each lecturer their personal weekly schedule.
+  const exportPerLecturer = async () => {
+    setExporting(true);
+    setShowExportMenu(false);
+    try {
+      const busyLecIds = new Set(sessions.map(s => s.lecId).filter(Boolean));
+      const ordered = [...lecturers]
+        .filter(l => busyLecIds.has(l.id))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      await exportTimetablePDF({
+        sessions, groups, courses, lecturers, rooms, holidays, settings,
+        perLecturerIds: ordered.map(l => l.id),
+        weekMonday, numDays, allSlots, fullSlots, lang,
         generatedBy: user?.fullName || null,
       });
       setShareHint(true);
@@ -384,6 +599,23 @@ export default function Timetable() {
   const displaySlots = allSlots.filter(s => !s.isBreak);
   const isEveSlotLabel = (label) => TIME_SLOTS.evening.some(s => s.label === label);
 
+  // Cells visually covered by a multi-slot block starting above them — only in
+  // the single-class view, where each cell holds at most one session so a
+  // rowSpan merge is unambiguous. Keys: `${dayIdx}-${slotIdx}`.
+  const coveredCells = React.useMemo(() => {
+    const set = new Set();
+    if (filterGroup === 'all') return set;
+    for (let di = 0; di < numDays; di++) {
+      for (let si = 0; si < displaySlots.length; si++) {
+        const block = (grid[di]?.[si] || []).find(s => (s.durationSlots || 1) > 1);
+        if (block) {
+          for (let k = 1; k < block.durationSlots && si + k < displaySlots.length; k++) set.add(`${di}-${si + k}`);
+        }
+      }
+    }
+    return set;
+  }, [grid, filterGroup, numDays, displaySlots]);
+
   return (
     <div className="space-y-6">
       {shareHint && (
@@ -437,6 +669,26 @@ export default function Timetable() {
         </p>
       </div>
 
+      {/* Feasibility diagnostics — why a week won't fully fit, with concrete fixes */}
+      {diagnostics.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <h3 className="font-bold text-amber-900 dark:text-amber-300">{t('diagTitle')}</h3>
+          </div>
+          <ul className="space-y-1.5">
+            {diagnostics.map((d, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-amber-900 dark:text-amber-200">
+                <span className={`mt-0.5 text-xs font-bold ${d.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                  {d.severity === 'error' ? '✕' : '!'}
+                </span>
+                <span>{d.message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -463,11 +715,19 @@ export default function Timetable() {
                       initial={{ opacity: 0, y: -8, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                      className="absolute right-0 top-11 z-50 bg-card border border-border rounded-xl shadow-xl p-1 min-w-[180px]"
+                      className="absolute right-0 top-11 z-50 bg-white dark:bg-slate-800 border border-border rounded-xl shadow-xl p-1 min-w-[180px]"
                     >
                       <button onClick={exportPDF} disabled={exporting}
                         className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
                         <FileText className="w-4 h-4 text-red-500" /> {t('ttExportPdf')}
+                      </button>
+                      <button onClick={exportAllLevels} disabled={exporting}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                        <Layers className="w-4 h-4 text-emerald-600" /> {t('ttExportAllLevels')}
+                      </button>
+                      <button onClick={exportPerLecturer} disabled={exporting}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                        <UserCheck className="w-4 h-4 text-violet-600" /> {t('ttExportPerLecturer')}
                       </button>
                       <button onClick={exportExcel}
                         className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left">
@@ -554,16 +814,28 @@ export default function Timetable() {
         <div className="bg-card border border-border rounded-xl p-3 flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('ttFilter')}</span>
 
-          <button onClick={() => setFilterGroup('all')}
+          <button onClick={() => setFilterGroup('all')} title={t('ttAllHint')}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filterGroup === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
             {t('ttAll')}
           </button>
-          {groups.map(g => (
-            <button key={g.id} onClick={() => setFilterGroup(g.id)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filterGroup === g.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
-              {g.name}
-            </button>
-          ))}
+          {Object.entries(groups.reduce((acc, g) => {
+            const lvl = g.year ?? '?';
+            (acc[lvl] = acc[lvl] || []).push(g);
+            return acc;
+          }, {}))
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }))
+            .map(([lvl, gs]) => (
+              <span key={lvl} className="flex items-center gap-1.5">
+                <span className="text-muted-foreground/30 mx-1">|</span>
+                <span className="text-[10px] font-bold text-muted-foreground/70 uppercase">{t('ttLevel')} {lvl}</span>
+                {gs.map(g => (
+                  <button key={g.id} onClick={() => setFilterGroup(g.id)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filterGroup === g.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+                    {g.name}
+                  </button>
+                ))}
+              </span>
+            ))}
 
           <span className="text-muted-foreground/30 mx-1">|</span>
 
@@ -621,8 +893,29 @@ export default function Timetable() {
           </div>
 
           <div className="p-4 border-b border-border flex items-center justify-between print:hidden">
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-foreground">{t('ttSessions', filteredSessions.length)}</h3>
+            <div className="flex items-center gap-3">
+              {(() => {
+                const cls = filterGroup !== 'all' ? groups.find(g => g.id === filterGroup) : null;
+                if (cls) {
+                  return (
+                    <div>
+                      <h3 className="font-bold text-foreground text-base leading-tight">
+                        {cls.name}
+                        <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary align-middle">
+                          {t('ttLevel')} {cls.year ?? '?'}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-muted-foreground">{cls.speciality ? specialityLabel(cls.speciality, lang) : '—'} · {t('ttSessions', filteredSessions.length)}</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div>
+                    <h3 className="font-semibold text-foreground">{t('ttSessions', filteredSessions.length)}</h3>
+                    <p className="text-xs text-muted-foreground">{t('ttAllHint')}</p>
+                  </div>
+                );
+              })()}
               {dragSession && <span className="text-xs text-accent-500 font-medium">{t('ttDragHint')}</span>}
             </div>
             <div className="flex items-center gap-1">
@@ -684,10 +977,15 @@ export default function Timetable() {
                           );
                         }
 
+                        // Covered by a block above (single-class view) — skip; the rowSpan fills it.
+                        if (coveredCells.has(`${di}-${si}`)) return null;
+
                         const cellSessions = grid[di]?.[si] || [];
+                        const blockHere = filterGroup !== 'all' ? cellSessions.find(s => (s.durationSlots || 1) > 1) : null;
                         return (
                           <td
                             key={di}
+                            rowSpan={blockHere ? blockHere.durationSlots : undefined}
                             className={`px-2 py-2 align-top transition-colors min-w-[200px] ${isDragTarget ? 'bg-accent-500/10 ring-2 ring-inset ring-accent-500/40' : ''}`}
                             style={{ minHeight: '100px', verticalAlign: 'top' }}
                             onDragOver={!isViewingHistory ? (e) => handleDragOver(e, di, si) : undefined}
@@ -700,6 +998,8 @@ export default function Timetable() {
                               const room     = roomMap[s.roomId];
                               const group    = s.groups?.[0] ? groupMap[s.groups[0]] : null;
                               const accentIdx = accentMap[s.courseId] ?? 0;
+                              const isMissed = s.status === 'missed';
+                              const isMakeup = s.isMakeup;
                               return (
                                 <div
                                   key={idx}
@@ -707,12 +1007,18 @@ export default function Timetable() {
                                   onDragStart={(e) => handleDragStart(e, s)}
                                   className={`${sessionCardClasses(accentIdx)} group/session relative ${
                                     s.locked || isViewingHistory ? 'opacity-95' : 'cursor-grab active:cursor-grabbing hover:shadow-md'
-                                  } transition-shadow`}
+                                  } ${isMissed ? 'opacity-60' : ''} transition-shadow`}
                                 >
                                   {!s.locked && !isViewingHistory && (
                                     <GripVertical className="w-3 h-3 absolute top-1.5 right-1.5 text-slate-400 opacity-0 group-hover/session:opacity-60 transition-opacity" />
                                   )}
-                                  <p className="font-bold text-sm break-words pr-4 text-slate-900">
+                                  {(isMakeup || isMissed) && (
+                                    <div className="flex flex-wrap gap-1 mb-1">
+                                      {isMakeup && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">🔁 {t('ttMakeupBadge')}</span>}
+                                      {isMissed && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">{t('ttMissedBadge')}</span>}
+                                    </div>
+                                  )}
+                                  <p className={`font-bold text-sm break-words pr-4 text-slate-900 ${isMissed ? 'line-through' : ''}`}>
                                     {course?.code || s.courseId}
                                     {s.sessionNum && (
                                       <span className="block text-[10px] font-semibold text-slate-600 mt-0.5">
@@ -726,18 +1032,74 @@ export default function Timetable() {
                                     )}
                                     {s.isCombined && <span className="font-medium ml-1 text-slate-600 text-xs">(CA)</span>}
                                   </p>
+                                  {slotDef.start && (() => {
+                                    const dur = s.durationSlots || 1;
+                                    const perH = slotHours(slotDef) || 2;
+                                    const totalH = perH * dur;
+                                    const end = dur > 1 ? addHours(slotDef.start, totalH) : slotDef.end;
+                                    return (
+                                      <p className="text-[10px] font-medium text-slate-500 mt-0.5">
+                                        {slotDef.start}–{end}
+                                        <span className="text-slate-400"> · {totalH}h</span>
+                                        {dur > 1 && <span className="ml-1 font-bold text-primary">· {t('ttBlock')}</span>}
+                                      </p>
+                                    );
+                                  })()}
                                   <p className="text-xs break-words mt-0.5 font-semibold text-slate-800">{lecturer?.name || '—'}</p>
                                   <p className="text-xs break-words text-slate-600">{room?.name || '—'}</p>
                                   {group && <p className="text-[11px] break-words font-bold mt-1 text-slate-500">{group.name}</p>}
-                                  <button
-                                    onClick={() => toggleLock(s)}
-                                    className="absolute bottom-1 right-1 opacity-0 group-hover/session:opacity-60 hover:!opacity-100 transition-opacity"
-                                    title={s.locked ? t('ttUnlock') : t('ttLock')}
-                                  >
-                                    {s.locked
-                                      ? <Lock className="w-2.5 h-2.5" />
-                                      : <Unlock className="w-2.5 h-2.5" />}
-                                  </button>
+                                  {!isViewingHistory && (
+                                    <div className="absolute bottom-1 right-1 flex items-center gap-1.5">
+                                      <button
+                                        onClick={() => toggleLock(s)}
+                                        className="opacity-0 group-hover/session:opacity-60 hover:!opacity-100 transition-opacity"
+                                        title={s.locked ? t('ttUnlock') : t('ttLock')}
+                                      >
+                                        {s.locked
+                                          ? <Lock className="w-2.5 h-2.5" />
+                                          : <Unlock className="w-2.5 h-2.5" />}
+                                      </button>
+                                      <button
+                                        onClick={() => handleCopySession(s)}
+                                        className="opacity-0 group-hover/session:opacity-60 hover:!opacity-100 transition-opacity"
+                                        title={t('ttCopySession')}
+                                      >
+                                        <Copy className="w-2.5 h-2.5" />
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setMissedMenuFor(missedMenuFor === s.id ? null : s.id); }}
+                                        className={`transition-opacity ${isMissed ? 'opacity-70 text-slate-600' : 'opacity-0 group-hover/session:opacity-60 hover:!opacity-100'}`}
+                                        title={t('ttMarkMissed')}
+                                      >
+                                        <CalendarX className="w-2.5 h-2.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteSession(s)}
+                                        className="opacity-0 group-hover/session:opacity-60 hover:!opacity-100 hover:!text-red-600 transition-opacity"
+                                        title={t('ttDeleteSession')}
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  )}
+                                  {missedMenuFor === s.id && !isViewingHistory && (
+                                    <div className="absolute z-20 right-1 bottom-7 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[160px] text-left">
+                                      {isMissed ? (
+                                        <button onClick={() => unmarkMissed(s)} className="block w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-50 text-slate-700">
+                                          {t('ttUnmarkMissed')}
+                                        </button>
+                                      ) : (
+                                        <>
+                                          <button onClick={() => markMissed(s, true)} className="block w-full text-left px-3 py-1.5 text-[11px] hover:bg-amber-50 text-amber-700 font-semibold">
+                                            🔁 {t('ttMissedWithMakeup')}
+                                          </button>
+                                          <button onClick={() => markMissed(s, false)} className="block w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-50 text-slate-600">
+                                            {t('ttMissedNoMakeup')}
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}

@@ -1,5 +1,16 @@
 # UniSchedule Backend — Setup & Development Guide
 
+> ## ⚠️ Status: Optional — Phase 2 (multi-campus sync). NOT wired to the app.
+>
+> UniSchedule runs **fully offline** out of the box: the frontend stores all data
+> locally in the browser (IndexedDB/Dexie) and needs no server — launch it with
+> `START.bat`. This backend is **not used by the running app**. It exists as the
+> future path for a hosted, multi-campus, multi-user deployment (shared database,
+> real auth, a public timetable viewer), and as a reference API design.
+>
+> Nothing in `frontend/` calls these endpoints today. Do not assume the two halves
+> are connected. If/when multi-user sync is adopted, this is where it starts.
+
 ## Overview
 
 UniSchedule is a timetable scheduling system built with **Next.js 14** and **PostgreSQL**. This guide covers setup, development, testing, and deployment.

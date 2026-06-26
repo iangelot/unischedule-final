@@ -64,6 +64,23 @@ db.version(5).stores({
   timetableSnapshots: '++id, savedAt, weekMonday',
 });
 
+// v6: makeup backlog — missed sessions a teacher will recover ("rattrapage").
+// Persists outside `sessions` (which is wiped on every generation) so a makeup
+// survives regeneration and is re-injected into a later week until delivered.
+db.version(6).stores({
+  courses:   'id, code, shareable',
+  lecturers: 'id, type, day, eve',
+  rooms:     'id, cap, eve, type',
+  groups:    'id, mode, speciality',
+  sessions:  'id, courseId, lecId, roomId, day, slot, mode, status, locked',
+  exams:     'id, courseId, date, roomId',
+  holidays:  'id, date, type',
+  settings:  'key',
+  users:     'id, email, role',
+  timetableSnapshots: '++id, savedAt, weekMonday',
+  makeups:   '++id, courseId, groupId, status',
+});
+
 export { CAMEROON_SPECIALITIES, specialityMatches } from './lib/cameroonSpecialities';
 
 // Cameroon public holidays (fixed + observed annually)
@@ -91,9 +108,9 @@ export const TIME_SLOTS = {
     { label: '14:00 – 16:00', start: '14:00', end: '16:00', isSat: false },
   ],
   university: [
-    { label: '07:30 – 09:30', start: '07:30', end: '09:30', isSat: false },
-    { label: '09:30 – 11:30', start: '09:30', end: '11:30', isSat: false },
-    { label: '11:30 – 13:00', start: '11:30', end: '13:00', isBreak: true, isSat: false },
+    { label: '08:00 – 10:00', start: '08:00', end: '10:00', isSat: false },
+    { label: '10:00 – 12:00', start: '10:00', end: '12:00', isSat: false },
+    { label: '12:00 – 13:00', start: '12:00', end: '13:00', isBreak: true, isSat: false },
     { label: '13:00 – 15:00', start: '13:00', end: '15:00', isSat: false },
     { label: '15:00 – 17:00', start: '15:00', end: '17:00', isSat: false },
   ],
@@ -119,7 +136,15 @@ export function getSlotsForType(institutionType) {
 }
 
 // 3. Database Initializer (Seeder)
-export async function initializeDatabase() {
+// Memoized so concurrent callers (e.g. React StrictMode invoking the init
+// effect twice) share one run and can't double-seed into a key collision.
+let initPromise = null;
+export function initializeDatabase() {
+  if (!initPromise) initPromise = runInitialization();
+  return initPromise;
+}
+
+async function runInitialization() {
   await db.open();
   const groupsCount = await db.groups.count();
 
@@ -129,6 +154,7 @@ export async function initializeDatabase() {
     console.log('Database seeded successfully!');
   } else {
     await migrateEnglishSpecialitiesToFrench();
+    await migrateShareableConsistency();
   }
 
   // Always ensure default settings exist
@@ -178,6 +204,21 @@ async function migrateEnglishSpecialitiesToFrench() {
   }
 }
 
+/**
+ * Enforce the app's own invariant: a "shareable" (general) course has no
+ * speciality. A course that carries a speciality but is also flagged shareable
+ * leaks into every group's timetable (e.g. CRY102 showing for all groups).
+ * Fix legacy data by un-sharing any speciality-bearing course.
+ */
+async function migrateShareableConsistency() {
+  const courses = await db.courses.toArray();
+  for (const c of courses) {
+    if (c.shareable && c.speciality) {
+      await db.courses.update(c.id, { shareable: false });
+    }
+  }
+}
+
 async function seedCameroonData() {
   // Groups: GL (Software), RT (Networking), GD (Graphic Design), CF (Accounting)
   await db.groups.bulkAdd([
@@ -217,9 +258,9 @@ async function seedCameroonData() {
 
   await db.courses.bulkAdd([
     // Génie Logiciel (GL)
-    { id: 'c_gl1', code: 'INF301', name_en: 'Algorithms & Data Structures', name_fr: 'Algorithmique & Structures de Données', credits: 4, hoursPerWeek: 4, shareable: true,  speciality: 'Génie Logiciel (GL)' },
+    { id: 'c_gl1', code: 'INF301', name_en: 'Algorithms & Data Structures', name_fr: 'Algorithmique & Structures de Données', credits: 4, hoursPerWeek: 4, shareable: false, speciality: 'Génie Logiciel (GL)' },
     { id: 'c_gl2', code: 'WEB302', name_en: 'Web Development',               name_fr: 'Développement Web',                    credits: 3, hoursPerWeek: 3, shareable: false, speciality: 'Génie Logiciel (GL)' },
-    { id: 'c_gl3', code: 'DB303',  name_en: 'Database Systems',               name_fr: 'Bases de Données',                    credits: 3, hoursPerWeek: 3, shareable: true,  speciality: 'Génie Logiciel (GL)' },
+    { id: 'c_gl3', code: 'DB303',  name_en: 'Database Systems',               name_fr: 'Bases de Données',                    credits: 3, hoursPerWeek: 3, shareable: false, speciality: 'Génie Logiciel (GL)' },
     { id: 'c_gl4', code: 'SYS304', name_en: 'Operating Systems',              name_fr: 'Systèmes d\'Exploitation',            credits: 3, hoursPerWeek: 3, shareable: false, speciality: 'Génie Logiciel (GL)' },
     { id: 'c_gl5', code: 'MOB305', name_en: 'Mobile Development',             name_fr: 'Développement Mobile',                credits: 3, hoursPerWeek: 2, shareable: false, speciality: 'Génie Logiciel (GL)' },
     // Réseaux & Télécoms (RT)
@@ -235,7 +276,7 @@ async function seedCameroonData() {
     { id: 'c_gd2', code: 'PHO102', name_en: 'Photography & Image Processing', name_fr: 'Photographie & Traitement d\'image',  credits: 3, hoursPerWeek: 3, shareable: false, speciality: 'Design Graphique (GD)' },
     // Sécurité des Systèmes (SSI)
     { id: 'c_cs1', code: 'CYB101', name_en: 'Ethical Hacking',                name_fr: 'Hacking Éthique',                    credits: 3, hoursPerWeek: 3, shareable: false, speciality: 'Sécurité des Systèmes (SSI)' },
-    { id: 'c_cs2', code: 'CRY102', name_en: 'Cryptography',                   name_fr: 'Cryptographie',                      credits: 3, hoursPerWeek: 3, shareable: true,  speciality: 'Sécurité des Systèmes (SSI)' },
+    { id: 'c_cs2', code: 'CRY102', name_en: 'Cryptography',                   name_fr: 'Cryptographie',                      credits: 3, hoursPerWeek: 3, shareable: false, speciality: 'Sécurité des Systèmes (SSI)' },
     // Shared / General modules
     { id: 'c_sh1', code: 'MAT101', name_en: 'Mathematics',                    name_fr: 'Mathématiques',                      credits: 4, hoursPerWeek: 4, shareable: true,  speciality: null },
     { id: 'c_sh2', code: 'ENG101', name_en: 'English Communication',          name_fr: 'Anglais Communication',              credits: 2, hoursPerWeek: 2, shareable: true,  speciality: null },
@@ -273,6 +314,3 @@ export async function getSetting(key) {
 export async function setSetting(key, value) {
   await db.settings.put({ key, value });
 }
-
-// 6. No-op — app runs fully local; sync removed for standalone mode
-export async function syncOfflineQueue() {}

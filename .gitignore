@@ -1,0 +1,10 @@
+# Claude Code local tooling/memory (machine-specific)
+.claude/
+
+# Office temp lock files
+~$*.docx
+~$*.xlsx
+
+# OS / editor
+.DS_Store
+Thumbs.db

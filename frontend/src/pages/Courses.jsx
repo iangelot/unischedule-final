@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Plus, Search, BookOpen, Edit2, Trash2, X, Share2 } from 'lucide-react';
 import { db, performOfflineAction, CAMEROON_SPECIALITIES } from '../db';
+import { specialityLabel } from '../lib/cameroonSpecialities';
 import { normalizeCourse, prepareCourseForSave, courseToForm, getCourseName } from '../lib/courseUtils';
+import { useLang } from '../hooks/useLang';
 
 const SPECIALITIES = Object.keys(CAMEROON_SPECIALITIES);
-const EMPTY_FORM = { code: '', name_en: '', name_fr: '', credits: 3, hoursPerWeek: 3, totalSessions: '', shareable: false, speciality: '' };
+const EMPTY_FORM = { code: '', name_en: '', name_fr: '', credits: 3, hoursPerWeek: 3, totalSessions: '', block: false, shareable: false, speciality: '' };
 
 export default function Courses() {
+  const { t, lang } = useLang();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal]   = useState(false);
   const [editItem, setEditItem]     = useState(null);
@@ -46,19 +49,19 @@ export default function Courses() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Catalogue des Cours</h2>
-          <p className="text-sm text-muted-foreground mt-1">Définissez les modules, crédits et filières.</p>
+          <h2 className="text-2xl font-bold text-foreground">{t('crsTitle')}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{t('crsSubtitle')}</p>
         </div>
         <button onClick={openAdd}
           className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm">
-          <Plus className="w-4 h-4" /> Ajouter un cours
+          <Plus className="w-4 h-4" /> {t('crsAddBtn')}
         </button>
       </div>
 
       <div className="bg-card p-4 rounded-xl border border-border shadow-sm">
         <div className="relative max-w-md">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input type="text" placeholder="Rechercher par code ou nom..." value={searchTerm}
+          <input type="text" placeholder={t('crsSearchPh')} value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full bg-muted/50 border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
         </div>
@@ -69,23 +72,23 @@ export default function Courses() {
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
               <tr>
-                <th className="px-6 py-4 font-semibold">Code</th>
-                <th className="px-6 py-4 font-semibold">Intitulé</th>
-                <th className="px-6 py-4 font-semibold">Filière</th>
-                <th className="px-6 py-4 font-semibold">Crédits</th>
-                <th className="px-6 py-4 font-semibold">H/sem</th>
-                <th className="px-6 py-4 font-semibold">Séances</th>
-                <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                <th className="px-6 py-4 font-semibold">{t('crsCode')}</th>
+                <th className="px-6 py-4 font-semibold">{t('crsName')}</th>
+                <th className="px-6 py-4 font-semibold">{t('cSpeciality')}</th>
+                <th className="px-6 py-4 font-semibold">{t('crsCredits')}</th>
+                <th className="px-6 py-4 font-semibold">{t('crsHoursCol')}</th>
+                <th className="px-6 py-4 font-semibold">{t('crsSessionsCol')}</th>
+                <th className="px-6 py-4 font-semibold text-right">{t('cActions')}</th>
               </tr>
             </thead>
             <tbody>
               {!courses ? (
-                <tr><td colSpan="7" className="px-6 py-8 text-center text-muted-foreground">Chargement...</td></tr>
+                <tr><td colSpan="7" className="px-6 py-8 text-center text-muted-foreground">{t('cLoading')}</td></tr>
               ) : courses.length === 0 ? (
                 <tr><td colSpan="7" className="px-6 py-12 text-center">
                   <div className="flex flex-col items-center">
                     <BookOpen className="w-12 h-12 text-muted-foreground/50 mb-3" />
-                    <p className="text-muted-foreground">Aucun cours trouvé.</p>
+                    <p className="text-muted-foreground">{t('crsNone')}</p>
                   </div>
                 </td></tr>
               ) : courses.map(course => {
@@ -96,18 +99,18 @@ export default function Courses() {
                       <span className="bg-slate-100 text-slate-800 border border-slate-300 text-xs font-mono font-bold px-2 py-1 rounded">{n.code}</span>
                     </td>
                     <td className="px-6 py-4 font-medium text-foreground">
-                      <div>{getCourseName(n, 'fr')}</div>
-                      {n.name_en && <div className="text-xs text-muted-foreground">{n.name_en}</div>}
+                      <div>{getCourseName(n, lang)}</div>
+                      {(lang === 'fr' ? n.name_en : n.name_fr) && <div className="text-xs text-muted-foreground">{lang === 'fr' ? n.name_en : n.name_fr}</div>}
                     </td>
                     <td className="px-6 py-4 text-xs text-muted-foreground">
                       {n.shareable
-                        ? <span className="inline-flex items-center gap-1 text-teal-600"><Share2 className="w-3 h-3"/>Commun</span>
-                        : (n.speciality || '—')}
+                        ? <span className="inline-flex items-center gap-1 text-teal-600"><Share2 className="w-3 h-3"/>{t('crsCommon')}</span>
+                        : (n.speciality ? specialityLabel(n.speciality, lang) : '—')}
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">{n.credits}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{n.hoursPerWeek}h</td>
+                    <td className="px-6 py-4 text-muted-foreground">{n.hoursPerWeek}{t('crsHoursUnit')}</td>
                     <td className="px-6 py-4 text-muted-foreground text-xs">
-                      {n.totalSessions ? `${n.totalSessions} / sem.` : '— auto'}
+                      {n.totalSessions ? `${n.totalSessions} ${t('crsPerSem')}` : t('crsAuto')}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -131,44 +134,44 @@ export default function Courses() {
             <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
               className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-foreground">{editItem ? 'Modifier le cours' : 'Nouveau cours'}</h3>
+                <h3 className="text-lg font-bold text-foreground">{editItem ? t('crsEdit') : t('crsNew')}</h3>
                 <button onClick={() => setShowModal(false)} className="p-1 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/50"><X className="w-5 h-5" /></button>
               </div>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Code *</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsCode')} *</label>
                     <input value={form.code} onChange={e => setForm(f => ({...f, code: e.target.value}))}
                       placeholder="INF301" className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono" />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Crédits</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsCredits')}</label>
                     <input type="number" min="1" max="10" value={form.credits} onChange={e => setForm(f => ({...f, credits: +e.target.value}))}
                       className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Intitulé (Français) *</label>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsNameFr')} *</label>
                   <input value={form.name_fr} onChange={e => setForm(f => ({...f, name_fr: e.target.value}))}
-                    placeholder="Algorithmique et Structures de Données" className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    placeholder={t('crsNameFrPh')} className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Intitulé (Anglais)</label>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsNameEn')}</label>
                   <input value={form.name_en} onChange={e => setForm(f => ({...f, name_en: e.target.value}))}
-                    placeholder="Algorithms & Data Structures" className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    placeholder={t('crsNameEnPh')} className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Heures / semaine</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsHoursWeek')}</label>
                     <input type="number" min="1" max="20" value={form.hoursPerWeek} onChange={e => setForm(f => ({...f, hoursPerWeek: +e.target.value}))}
                       className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                    <p className="text-[10px] text-muted-foreground mt-1">2h par créneau → séances/semaine calculées auto</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{t('crsHoursHint')}</p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Séances au semestre</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsSessionsSem')}</label>
                     <input type="number" min="1" max="200" value={form.totalSessions} onChange={e => setForm(f => ({...f, totalSessions: e.target.value}))}
-                      placeholder="ex. 30" className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                    <p className="text-[10px] text-muted-foreground mt-1">Vide = heures/sem × nb semaines</p>
+                      placeholder={t('crsSessionsPh')} className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    <p className="text-[10px] text-muted-foreground mt-1">{t('crsSessionsHint')}</p>
                   </div>
                 </div>
                 <label className="flex items-center gap-3 cursor-pointer">
@@ -176,24 +179,31 @@ export default function Courses() {
                     className={`w-10 h-5.5 rounded-full relative transition-colors duration-200 ${form.shareable ? 'bg-primary-500' : 'bg-muted-foreground/30'}`}>
                     <div className={`absolute top-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform duration-200 ${form.shareable ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </div>
-                  <span className="text-sm text-muted-foreground">Cours commun (toutes filières)</span>
+                  <span className="text-sm text-muted-foreground">{t('cCommonAllSpec')}</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div onClick={() => setForm(f => ({...f, block: !f.block}))}
+                    className={`w-10 h-5.5 rounded-full relative transition-colors duration-200 ${form.block ? 'bg-primary-500' : 'bg-muted-foreground/30'}`}>
+                    <div className={`absolute top-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform duration-200 ${form.block ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </div>
+                  <span className="text-sm text-muted-foreground">{t('crsBlock')}</span>
                 </label>
                 {!form.shareable && (
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">Filière</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('cSpeciality')}</label>
                     <select value={form.speciality} onChange={e => setForm(f => ({...f, speciality: e.target.value}))}
                       className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
-                      <option value="">— Choisir —</option>
-                      {SPECIALITIES.map(s => <option key={s} value={s}>{s}</option>)}
+                      <option value="">{t('crsChoose')}</option>
+                      {SPECIALITIES.map(s => <option key={s} value={s}>{specialityLabel(s, lang)}</option>)}
                     </select>
                   </div>
                 )}
               </div>
               <div className="flex gap-3 mt-6">
-                <button onClick={() => setShowModal(false)} className="flex-1 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50">Annuler</button>
+                <button onClick={() => setShowModal(false)} className="flex-1 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50">{t('cCancel')}</button>
                 <button onClick={handleSave} disabled={saving || !form.code || !form.name_fr}
                   className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {saving ? 'Enregistrement...' : editItem ? 'Enregistrer' : 'Ajouter'}
+                  {saving ? t('cSaving') : editItem ? t('cSave') : t('cAdd')}
                 </button>
               </div>
             </motion.div>

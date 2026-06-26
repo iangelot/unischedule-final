@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Download, FileSpreadsheet, ChevronLeft, ChevronRight, CalendarX, LayoutGrid, Printer, CheckCircle2 } from 'lucide-react';
 import { db, TIME_SLOTS } from '../db';
+import { specialityLabel } from '../lib/cameroonSpecialities';
 import { getWeekDayCount, getWeekDayLabels, formatWeekRange } from '../lib/weekConfig';
 import { sessionCardClasses } from '../lib/sessionCardStyle';
 import { panelInfo, panelSuccess } from '../lib/uiBadges';
@@ -181,7 +182,7 @@ export default function MasterGrid() {
       {shareHint && (
         <div className={panelSuccess}>
           <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>PDF téléchargé — ouvrez WhatsApp et envoyez-le à vos groupes étudiants.</span>
+          <span>{t('mgPdfDownloaded')}</span>
         </div>
       )}
 
@@ -195,16 +196,16 @@ export default function MasterGrid() {
         <div>
           <div className="flex items-center gap-2">
             <LayoutGrid className="w-5 h-5 text-primary" />
-            <h2 className="text-2xl font-bold text-foreground">Grille Maîtresse</h2>
+            <h2 className="text-2xl font-bold text-foreground">{t('mgTitle')}</h2>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Vue combinée · {specialities.length} filière{specialities.length !== 1 ? 's' : ''} · {sessions.length} séances
+            {t('mgSubtitle', specialities.length, sessions.length)}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           {/* Mode filter */}
           <div className="flex rounded-xl border border-border overflow-hidden bg-card text-xs">
-            {[['all','Tous'],['day','Jour'],['evening','Soir']].map(([v,l]) => (
+            {[['all',t('ttAll')],['day',t('cDay')],['evening',t('cEvening')]].map(([v,l]) => (
               <button key={v} onClick={() => setModeFilter(v)}
                 className={`px-3 py-2 font-medium transition-colors ${modeFilter===v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
                 {l}
@@ -217,11 +218,11 @@ export default function MasterGrid() {
               <button onClick={() => setShowExport(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-xl text-sm font-medium hover:bg-muted/50 transition-colors">
                 <Download className="w-4 h-4" />
-                {exporting ? 'Export...' : 'Exporter'}
+                {exporting ? t('mgExporting') : t('mgExport')}
               </button>
               {showExport && (
                 <motion.div initial={{ opacity:0, y:-6 }} animate={{ opacity:1, y:0 }}
-                  className="absolute right-0 top-11 z-50 bg-card border border-border rounded-xl shadow-xl p-1 min-w-47.5">
+                  className="absolute right-0 top-11 z-50 bg-white dark:bg-slate-800 border border-border rounded-xl shadow-xl p-1 min-w-47.5">
                   <button onClick={handlePDFExport} disabled={exporting}
                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
                     <span className="text-red-500 text-base">📄</span> PDF (format IUGET)
@@ -232,7 +233,7 @@ export default function MasterGrid() {
                   </button>
                   <button onClick={() => { window.print(); setShowExport(false); }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left">
-                    <Printer className="w-4 h-4 text-blue-500" /> Imprimer
+                    <Printer className="w-4 h-4 text-blue-500" /> {t('mgPrint')}
                   </button>
                 </motion.div>
               )}
@@ -251,7 +252,7 @@ export default function MasterGrid() {
           <p className="text-sm font-semibold text-foreground">{dateRange}</p>
           {settings.currentWeek && (
             <p className="text-xs text-muted-foreground">
-              Semaine {settings.currentWeek}/{settings.totalWeeks || '?'}
+              {lang === 'fr' ? 'Semaine' : 'Week'} {settings.currentWeek}/{settings.totalWeeks || '?'}
               {settings.semester ? ` · ${settings.semester}` : ''}
               {settings.cohort   ? ` · ${settings.cohort}`   : ''}
             </p>
@@ -267,7 +268,7 @@ export default function MasterGrid() {
       {specialities.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {specialities.map(sp => (
-            <span key={sp} className={`text-xs font-semibold px-3 py-1 rounded-full border ${specColorMap[sp]}`}>{sp}</span>
+            <span key={sp} className={`text-xs font-semibold px-3 py-1 rounded-full border ${specColorMap[sp]}`}>{specialityLabel(sp, lang)}</span>
           ))}
         </div>
       )}
@@ -276,12 +277,12 @@ export default function MasterGrid() {
       {sessions.length === 0 ? (
         <div className="bg-card border border-border rounded-2xl flex flex-col items-center justify-center py-20 text-center px-6">
           <LayoutGrid className="w-12 h-12 text-muted-foreground/30 mb-4" />
-          <h3 className="text-lg font-semibold text-foreground mb-2">Aucune donnée</h3>
-          <p className="text-sm text-muted-foreground max-w-xs">Générez d'abord un emploi du temps dans l'onglet "Emploi du Temps".</p>
+          <h3 className="text-lg font-semibold text-foreground mb-2">{t('mgNoData')}</h3>
+          <p className="text-sm text-muted-foreground max-w-xs">{t('mgNoDataHint')}</p>
         </div>
       ) : specialities.length === 0 ? (
         <div className="bg-card border border-border rounded-2xl p-8 text-center text-muted-foreground text-sm">
-          Aucun groupe ne correspond au filtre sélectionné.
+          {t('mgNoFilter')}
         </div>
       ) : (
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
@@ -320,7 +321,7 @@ export default function MasterGrid() {
                         <th key={`${di}-${si}`}
                           className={`px-1 py-1.5 text-center font-semibold border-r border-primary-700 last:border-r-0 ${isSat ? 'bg-indigo-800' : ''}`}
                           style={{ minWidth: 90, fontSize: 8 }}>
-                          {sp.length > 16 ? sp.slice(0, 15) + '…' : sp}
+                          {(() => { const lbl = specialityLabel(sp, lang); return lbl.length > 16 ? lbl.slice(0, 15) + '…' : lbl; })()}
                         </th>
                       );
                     })
@@ -337,7 +338,7 @@ export default function MasterGrid() {
                       <td className="px-3 py-2 font-mono font-bold text-muted-foreground border-r border-border whitespace-nowrap align-middle bg-muted/30"
                         style={{ fontSize: 10 }}>
                         {slot.label}
-                        {isEve && <div className="text-[8px] text-indigo-400 font-sans font-normal">Cours du Soir</div>}
+                        {isEve && <div className="text-[8px] text-indigo-400 font-sans font-normal">{t('mgEveningClass')}</div>}
                       </td>
 
                       {/* Day × Speciality cells */}

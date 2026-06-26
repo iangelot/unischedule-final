@@ -67,8 +67,10 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 bg-primary-950 text-primary-100 flex flex-col h-screen border-r border-primary-900/50">
-      <div className="h-16 flex items-center px-4 border-b border-primary-900/50">
-        <AppLogo size="sm" onDark className="max-w-[200px]" />
+      <div className="h-20 flex items-center px-3 border-b border-primary-900/50">
+        <div className="w-full flex items-center justify-center bg-white rounded-xl px-4 py-2.5 shadow-md">
+          <AppLogo size="lg" className="max-w-[190px]" />
+        </div>
       </div>
 
       <nav className="flex-1 py-4 px-3 space-y-4 overflow-y-auto">

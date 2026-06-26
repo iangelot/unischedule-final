@@ -6,13 +6,15 @@ import {
   Download, Users, Lock
 } from 'lucide-react';
 import { db, setSetting, CAMEROON_SPECIALITIES } from '../db';
+import { specialityLabel } from '../lib/cameroonSpecialities';
 import { useAppStore } from '../store/useAppStore';
+import { useLang } from '../hooks/useLang';
 import { canEditSetting, listUsers, createUser, deleteUser, ROLES } from '../lib/auth';
 import { exportBackup, importBackup } from '../lib/backup';
 
 const INSTITUTION_TYPES = [
-  { value: 'university', label: 'Université / Grande École', icon: GraduationCap, desc: '07h30–17h00 jour · 18h00–22h00 soir' },
-  { value: 'secondary',  label: 'Lycée / Collège',           icon: School,        desc: '08h00–16h00 · pas de cours du soir' },
+  { value: 'university', labelKey: 'setTypeUni', icon: GraduationCap, descKey: 'setTypeUniDesc' },
+  { value: 'secondary',  labelKey: 'setTypeSec', icon: School,        descKey: 'setTypeSecDesc' },
 ];
 
 const EMPTY = {
@@ -23,6 +25,7 @@ const EMPTY = {
 };
 
 export default function Settings() {
+  const { t, lang } = useLang();
   const user = useAppStore(s => s.user);
   const isAdmin = user?.role === ROLES.ADMIN;
   const role = user?.role;
@@ -57,7 +60,7 @@ export default function Settings() {
     if (!canEdit(field)) return;
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 500 * 1024) { alert('Logo trop grand. Max: 500 Ko.'); return; }
+    if (file.size > 500 * 1024) { alert(t('setLogoTooBig')); return; }
     const reader = new FileReader();
     reader.onload = (ev) => set(field, ev.target.result);
     reader.readAsDataURL(file);
@@ -82,14 +85,14 @@ export default function Settings() {
       await createUser(newUser);
       setUsers(await listUsers());
       setNewUser({ fullName: '', email: '', password: '', role: ROLES.TIMETABLER });
-      setUserMsg('Compte créé avec succès.');
+      setUserMsg(t('setUserCreated'));
     } catch (e) {
       setUserMsg(e.message);
     }
   };
 
   const handleDeleteUser = async (id) => {
-    if (!confirm('Supprimer ce compte ?')) return;
+    if (!confirm(t('setConfirmDeleteUser'))) return;
     try {
       await deleteUser(id);
       setUsers(await listUsers());
@@ -100,20 +103,20 @@ export default function Settings() {
 
   const handleExportBackup = async () => {
     await exportBackup();
-    setBackupMsg('Sauvegarde exportée.');
+    setBackupMsg(t('setBackupExported'));
     setTimeout(() => setBackupMsg(''), 3000);
   };
 
   const handleImportBackup = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!confirm('Cette action remplacera toutes les données actuelles. Continuer ?')) return;
+    if (!confirm(t('setConfirmImport'))) return;
     try {
       await importBackup(file);
-      setBackupMsg('Données restaurées. Rechargez la page.');
+      setBackupMsg(t('setRestored'));
       setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-      setBackupMsg(err.message || 'Erreur d\'import.');
+      setBackupMsg(err.message || t('setImportErr'));
     }
     e.target.value = '';
   };
@@ -124,7 +127,7 @@ export default function Settings() {
   };
 
   const weekNum  = form.currentWeek || '1';
-  const refMonth = new Date().toLocaleDateString('fr-FR', { month: '2-digit', year: '2-digit' }).replace('/', '-');
+  const refMonth = new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-GB', { month: '2-digit', year: '2-digit' }).replace('/', '-');
   const refPreview = form.refPrefix
     ? `REF: N°${weekNum}/${form.refPrefix}/${refMonth}-sw`
     : `REF: N°${weekNum}/[PREFIX]/${refMonth}-sw`;
@@ -132,41 +135,41 @@ export default function Settings() {
   const lockedBanner = !isAdmin && (
     <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-sm text-amber-800 dark:text-amber-300">
       <Lock className="w-4 h-4 shrink-0 mt-0.5" />
-      <p>En tant que <strong>Planificateur</strong>, vous pouvez modifier le semestre et les options d'affichage. Les logos, signatures et références officielles sont réservés à l'<strong>Administrateur</strong>.</p>
+      <p>{t('setLockedBanner')}</p>
     </div>
   );
 
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Paramètres</h2>
+        <h2 className="text-2xl font-bold text-foreground">{t('setTitle')}</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Configuration de l'établissement · Apparaît sur tous les PDF exportés.
+          {t('setSubtitle')}
         </p>
       </div>
 
       {lockedBanner}
 
       {/* ── Identity (admin only) ── */}
-      <Section title="Identité de l'Établissement" icon={Building2} locked={!isAdmin}>
+      <Section title={t('setIdentity')} icon={Building2} locked={!isAdmin} t={t}>
         <div className="flex items-start gap-6">
-          <LogoBox label="Logo Principal" value={form.logo} disabled={!canEdit('logo')}
+          <LogoBox label={t('setLogoMain')} value={form.logo} disabled={!canEdit('logo')}
             onClear={() => set('logo', null)} onUpload={() => logoRef.current?.click()} />
           <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload('logo')} />
-          <LogoBox label="Logo Secondaire" value={form.logo2} disabled={!canEdit('logo2')}
+          <LogoBox label={t('setLogoSecond')} value={form.logo2} disabled={!canEdit('logo2')}
             onClear={() => set('logo2', null)} onUpload={() => logo2Ref.current?.click()} />
           <input ref={logo2Ref} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload('logo2')} />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Nom de l'institution *" placeholder="ex: IUGET" value={form.institutionName}
+          <Field label={`${t('setInstName')} *`} placeholder={t('setInstNamePh')} value={form.institutionName}
             onChange={v => set('institutionName', v)} disabled={!canEdit('institutionName')} />
-          <Field label="Nom de l'école" placeholder="ex: South Polytech" value={form.schoolName}
+          <Field label={t('setSchoolName')} placeholder={t('setSchoolNamePh')} value={form.schoolName}
             onChange={v => set('schoolName', v)} disabled={!canEdit('schoolName')} />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-foreground mb-3">Type d'établissement</label>
+          <label className="block text-sm font-medium text-foreground mb-3">{t('setInstType')}</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {INSTITUTION_TYPES.map(type => {
               const Icon = type.icon;
@@ -179,8 +182,8 @@ export default function Settings() {
                     <Icon className={`w-4 h-4 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
                   </div>
                   <div>
-                    <p className={`text-sm font-semibold ${active ? 'text-primary' : 'text-foreground'}`}>{type.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{type.desc}</p>
+                    <p className={`text-sm font-semibold ${active ? 'text-primary' : 'text-foreground'}`}>{t(type.labelKey)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t(type.descKey)}</p>
                   </div>
                   {active && <CheckCircle2 className="w-4 h-4 text-primary ml-auto shrink-0 mt-0.5" />}
                 </button>
@@ -191,20 +194,20 @@ export default function Settings() {
       </Section>
 
       {/* ── Timetable Header ── */}
-      <Section title="En-tête de l'Emploi du Temps" icon={FileText}>
+      <Section title={t('setHeaderTitle')} icon={FileText} t={t}>
         <div className="flex items-start gap-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-xl p-3 text-xs text-blue-800 dark:text-blue-300">
           <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <p>Ces informations apparaissent dans le titre du PDF, comme sur les vrais emplois du temps.</p>
+          <p>{t('setHeaderInfo')}</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Semestre" placeholder="ex: Sixth Semester" value={form.semester} onChange={v => set('semester', v)} />
-          <Field label="Cohorte / Filière" placeholder="ex: B.TECH BONABERI" value={form.cohort} onChange={v => set('cohort', v)} />
+          <Field label={t('setSemester')} placeholder={t('setSemesterPh')} value={form.semester} onChange={v => set('semester', v)} />
+          <Field label={t('setCohort')} placeholder={t('setCohortPh')} value={form.cohort} onChange={v => set('cohort', v)} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Semaine actuelle</label>
+            <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">{t('setCurrentWeek')}</label>
             <div className="flex items-center gap-2">
               <input type="number" min="1" max="52" value={form.currentWeek} disabled={!canEdit('currentWeek')}
                 onChange={e => set('currentWeek', e.target.value)}
@@ -215,45 +218,43 @@ export default function Settings() {
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50" />
             </div>
           </div>
-          <Field label="Ville" placeholder="ex: Douala" value={form.city}
+          <Field label={t('setCity')} placeholder={t('setCityPh')} value={form.city}
             onChange={v => set('city', v)} disabled={!canEdit('city')} />
         </div>
 
         <div>
           <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-            Préfixe du numéro de référence {!canEdit('refPrefix') && <Lock className="inline w-3 h-3 ml-1" />}
+            {t('setRefPrefix')} {!canEdit('refPrefix') && <Lock className="inline w-3 h-3 ml-1" />}
           </label>
           <input type="text" value={form.refPrefix} disabled={!canEdit('refPrefix')}
-            onChange={e => set('refPrefix', e.target.value)} placeholder="ex: IUGET/C-BHI/P-SP"
+            onChange={e => set('refPrefix', e.target.value)} placeholder={t('setRefPrefixPh')}
             className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50" />
           <p className="text-[10px] text-muted-foreground mt-1 font-mono">{refPreview}</p>
         </div>
       </Section>
 
       {/* ── Signature (admin only) ── */}
-      <Section title="Bloc de Signature (bas de page PDF)" icon={User} locked={!isAdmin}>
+      <Section title={t('setSignature')} icon={User} locked={!isAdmin} t={t}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Titre du signataire" placeholder="ex: Le Directeur" value={form.directorTitle}
+          <Field label={t('setSignerTitle')} placeholder={t('setSignerTitlePh')} value={form.directorTitle}
             onChange={v => set('directorTitle', v)} disabled={!canEdit('directorTitle')} />
-          <Field label="Nom du signataire" placeholder="ex: Claude A-ang" value={form.directorName}
+          <Field label={t('setSignerName')} placeholder={t('setSignerNamePh')} value={form.directorName}
             onChange={v => set('directorName', v)} disabled={!canEdit('directorName')} />
         </div>
       </Section>
 
       {/* ── Schedule Options ── */}
-      <Section title="Options de l'Emploi du Temps" icon={Calendar}>
-        <Toggle label="Inclure le Samedi"
-          description={form.institutionType === 'secondary'
-            ? 'Collèges / lycées : cours jusqu\'au samedi'
-            : 'Universités : colonne samedi dans l\'emploi du temps'}
+      <Section title={t('setOptions')} icon={Calendar} t={t}>
+        <Toggle label={t('setIncludeSat')}
+          description={form.institutionType === 'secondary' ? t('setSatDescSec') : t('setSatDescUni')}
           value={form.showSaturday} onChange={v => set('showSaturday', v)} />
         {form.institutionType !== 'secondary' && (
-          <Toggle label="Inclure le Dimanche"
-            description="Universités : cours jusqu'au dimanche (7 jours)"
+          <Toggle label={t('setIncludeSun')}
+            description={t('setSunDesc')}
             value={form.showSunday} onChange={v => set('showSunday', v)} />
         )}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-3">Langue d'affichage</label>
+          <label className="block text-sm font-medium text-foreground mb-3">{t('setDisplayLang')}</label>
           <div className="flex gap-2">
             {[{ value: 'fr', label: '🇫🇷 Français' }, { value: 'en', label: '🇬🇧 English' }].map(opt => (
               <button key={opt.value} onClick={() => set('language', opt.value)}
@@ -267,15 +268,15 @@ export default function Settings() {
 
       {/* ── User management (admin only) ── */}
       {isAdmin && (
-        <Section title="Gestion des Comptes" icon={Users}>
-          <p className="text-xs text-muted-foreground">Seuls les comptes autorisés peuvent modifier les emplois du temps.</p>
+        <Section title={t('setUserMgmt')} icon={Users} t={t}>
+          <p className="text-xs text-muted-foreground">{t('setUserMgmtHint')}</p>
 
           <div className="space-y-2">
             {users.map(u => (
               <div key={u.id} className="flex items-center justify-between px-4 py-3 bg-muted/50 rounded-xl">
                 <div>
                   <p className="text-sm font-medium text-foreground">{u.fullName}</p>
-                  <p className="text-xs text-muted-foreground">{u.email} · {u.role === ROLES.ADMIN ? 'Administrateur' : 'Planificateur'}</p>
+                  <p className="text-xs text-muted-foreground">{u.email} · {u.role === ROLES.ADMIN ? t('setRoleAdmin') : t('setRoleTimetabler')}</p>
                 </div>
                 {u.id !== user?.id && (
                   <button onClick={() => handleDeleteUser(u.id)}
@@ -288,23 +289,23 @@ export default function Settings() {
           </div>
 
           <div className="border-t border-border pt-4 space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase">Ajouter un compte</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase">{t('setAddAccount')}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input type="text" value={newUser.fullName} onChange={e => setNewUser(u => ({ ...u, fullName: e.target.value }))}
-                placeholder="Nom complet" className="px-3 py-2 rounded-lg border border-border bg-background text-sm" />
+                placeholder={t('setFullNamePh')} className="px-3 py-2 rounded-lg border border-border bg-background text-sm" />
               <input type="email" value={newUser.email} onChange={e => setNewUser(u => ({ ...u, email: e.target.value }))}
-                placeholder="Email" className="px-3 py-2 rounded-lg border border-border bg-background text-sm" />
+                placeholder={t('setEmailPh')} className="px-3 py-2 rounded-lg border border-border bg-background text-sm" />
               <input type="password" value={newUser.password} onChange={e => setNewUser(u => ({ ...u, password: e.target.value }))}
-                placeholder="Mot de passe (min. 6)" className="px-3 py-2 rounded-lg border border-border bg-background text-sm" />
+                placeholder={t('setPwPh')} className="px-3 py-2 rounded-lg border border-border bg-background text-sm" />
               <select value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}
                 className="px-3 py-2 rounded-lg border border-border bg-background text-sm">
-                <option value={ROLES.TIMETABLER}>Planificateur</option>
-                <option value={ROLES.ADMIN}>Administrateur</option>
+                <option value={ROLES.TIMETABLER}>{t('setRoleTimetabler')}</option>
+                <option value={ROLES.ADMIN}>{t('setRoleAdmin')}</option>
               </select>
             </div>
             <button onClick={handleAddUser}
               className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90">
-              Créer le compte
+              {t('setCreateAccount')}
             </button>
             {userMsg && <p className="text-xs text-muted-foreground">{userMsg}</p>}
           </div>
@@ -313,16 +314,16 @@ export default function Settings() {
 
       {/* ── Backup (admin only) ── */}
       {isAdmin && (
-        <Section title="Sauvegarde des Données" icon={Shield}>
-          <p className="text-xs text-muted-foreground">Exportez régulièrement vos données pour éviter toute perte.</p>
+        <Section title={t('setBackup')} icon={Shield} t={t}>
+          <p className="text-xs text-muted-foreground">{t('setBackupHint')}</p>
           <div className="flex flex-wrap gap-3">
             <button onClick={handleExportBackup}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-muted/50 transition-colors">
-              <Download className="w-4 h-4" /> Exporter la sauvegarde
+              <Download className="w-4 h-4" /> {t('setExportBackup')}
             </button>
             <button onClick={() => backupRef.current?.click()}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-muted/50 transition-colors">
-              <Upload className="w-4 h-4" /> Importer une sauvegarde
+              <Upload className="w-4 h-4" /> {t('setImportBackup')}
             </button>
             <input ref={backupRef} type="file" accept=".json" className="hidden" onChange={handleImportBackup} />
           </div>
@@ -331,13 +332,13 @@ export default function Settings() {
       )}
 
       {/* ── Specialities Reference ── */}
-      <Section title="Filières Connues (Cameroun)" icon={GraduationCap}>
+      <Section title={t('setSpecRef')} icon={GraduationCap} t={t}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Object.entries(CAMEROON_SPECIALITIES).map(([name, meta]) => (
             <div key={name} className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg">
               <span className="text-xs font-mono text-primary font-bold w-10 shrink-0">{meta.code}</span>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-foreground truncate">{name}</p>
+                <p className="text-xs font-medium text-foreground truncate">{specialityLabel(name, lang)}</p>
                 <p className="text-[10px] text-muted-foreground">{meta.dept}</p>
               </div>
             </div>
@@ -349,14 +350,14 @@ export default function Settings() {
       <div className="flex items-center gap-3 pb-6">
         <motion.button onClick={handleSave} whileTap={{ scale: 0.97 }}
           className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors flex items-center gap-2">
-          <Save className="w-4 h-4" /> Sauvegarder
+          <Save className="w-4 h-4" /> {t('setSave')}
         </motion.button>
         <AnimatePresence>
           {saved && (
             <motion.div initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
               className="flex items-center gap-1.5 text-slate-800">
               <CheckCircle2 className="w-4 h-4" />
-              <span className="text-sm font-medium">Sauvegardé !</span>
+              <span className="text-sm font-medium">{t('setSaved')}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -365,7 +366,7 @@ export default function Settings() {
   );
 }
 
-function Section({ title, icon: Icon, locked, children }) {
+function Section({ title, icon: Icon, locked, children, t }) {
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
       className="bg-card border border-border rounded-2xl p-6 space-y-5">
@@ -374,7 +375,7 @@ function Section({ title, icon: Icon, locked, children }) {
         <h3 className="font-semibold text-foreground text-sm">{title}</h3>
         {locked && (
           <span className="ml-auto flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-full">
-            <Lock className="w-3 h-3" /> Admin uniquement
+            <Lock className="w-3 h-3" /> {t ? t('setAdminOnly') : 'Admin uniquement'}
           </span>
         )}
       </div>

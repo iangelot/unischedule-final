@@ -37,19 +37,18 @@ export function useForm({ initialValues, onSubmit, validate }: UseFormProps) {
       const { name, value, type } = e.target;
       const fieldValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
 
-      setState((prev) => ({
-        ...prev,
-        values: {
-          ...prev.values,
-          [name]: fieldValue,
-        },
-        touched: {
-          ...prev.touched,
-          [name]: true,
-        },
-      }));
+      setState((prev) => {
+        const nextValues = { ...prev.values, [name]: fieldValue };
+        return {
+          ...prev,
+          values: nextValues,
+          touched: { ...prev.touched, [name]: true },
+          // Re-validate live once errors are showing, so they clear as the user corrects them.
+          errors: prev.errors.length && validate ? validate(nextValues) : prev.errors,
+        };
+      });
     },
-    []
+    [validate]
   );
 
   const handleBlur = React.useCallback((e: React.FocusEvent<any>) => {
@@ -87,9 +86,19 @@ export function useForm({ initialValues, onSubmit, validate }: UseFormProps) {
       if (validate) {
         const errors = validate(state.values);
         if (errors.length > 0) {
+          // Mark every field touched so FormField surfaces the errors
+          // (a field's error is only shown once it has been touched).
+          const allTouched = Object.keys(state.values).reduce<Record<string, boolean>>(
+            (acc, key) => {
+              acc[key] = true;
+              return acc;
+            },
+            {}
+          );
           setState((prev) => ({
             ...prev,
             errors,
+            touched: { ...prev.touched, ...allTouched },
           }));
           return;
         }

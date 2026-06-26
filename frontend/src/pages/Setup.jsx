@@ -85,7 +85,7 @@ export default function Setup() {
         <div className="mb-6">
           <AppLogo size="md" onDark className="max-w-[220px] mb-3" />
           <h1 className="text-lg font-bold text-white">{t(lang, 'setupTitle')}</h1>
-          <p className="text-xs text-slate-300">{t(lang, 'setupStep')(step)}</p>
+          <p className="text-xs text-slate-300">{t(lang, 'setupStep', step)}</p>
         </div>
 
         <div className="flex gap-2 mb-8">

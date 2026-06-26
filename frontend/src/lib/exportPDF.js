@@ -67,7 +67,8 @@ function estimateDayHeight(rowCount, nGroups) {
 
 function renderDayTable(doc, {
   y, pageW, pageH, lang, numDays, dayIndex, weekDates, columnGroups,
-  daySlots, displaySlots, allSessions, courseMap, lecturerMap, holidayMap, slotResolver,
+  daySlots, displaySlots, allSessions, courseMap, lecturerMap, groupMap = {}, roomMap = {}, holidayMap, slotResolver,
+  cellMode = 'group',
 }) {
   const date = weekDates[dayIndex];
   const iso = toISO(date);
@@ -152,12 +153,17 @@ function renderDayTable(doc, {
       const cellSessions = sessionsForCell(allSessions, dayIndex, slot.displayIdx, g.id, slotResolver);
       const text = cellSessions.map(s => {
         const c = courseMap[s.courseId];
-        const l = lecturerMap[s.lecId];
         const code = (c?.code || getCourseName(c, lang) || '?').toUpperCase();
-        const sess = s.sessionNum && s.totalSessions
-          ? (lang === 'fr' ? ` (${s.sessionNum}/${s.totalSessions})` : ` (${s.sessionNum}/${s.totalSessions})`)
-          : '';
+        const sess = s.sessionNum && s.totalSessions ? ` (${s.sessionNum}/${s.totalSessions})` : '';
         const line1 = `${code}${sess}`;
+        if (cellMode === 'lecturer') {
+          // Teacher's own sheet: show which class(es) and room, not their own name.
+          const grpNames = (s.groups || []).map(gid => groupMap[gid]?.name).filter(Boolean).join(', ');
+          const room = roomMap[s.roomId]?.name;
+          const extra = [grpNames, room].filter(Boolean).join(' · ');
+          return extra ? `${line1}\n${extra}` : line1;
+        }
+        const l = lecturerMap[s.lecId];
         return l?.name ? `${line1}\n${l.name}` : line1;
       }).join('\n---\n');
 
@@ -221,6 +227,8 @@ export async function exportTimetablePDF({
   holidays,
   settings,
   filterGroupId = null,
+  perGroupIds = null,    // when set, render one class per page (Export all levels)
+  perLecturerIds = null, // when set, render one teacher's personal sheet per page
   weekMonday,
   numDays = 5,
   allSlots,
@@ -234,6 +242,8 @@ export async function exportTimetablePDF({
 
   const courseMap = Object.fromEntries(courses.map(c => [c.id, c]));
   const lecturerMap = Object.fromEntries(lecturers.map(l => [l.id, l]));
+  const groupMap = Object.fromEntries(groups.map(g => [g.id, g]));
+  const roomMap = Object.fromEntries(rooms.map(r => [r.id, r]));
   const holidayMap = {};
   holidays.forEach(h => { holidayMap[h.date] = h; });
 
@@ -349,49 +359,83 @@ export async function exportTimetablePDF({
   };
 
   const headerH = 48;
-  const pagePlan = planTwoPages(numDays, displaySlots, filteredSessions, slotResolver, columnGroups.length, headerH, pageH);
 
-  let y = await renderHeader(8, false);
-  let pagePart = 0;
+  // Render one complete timetable (header + day tables + signature) for the
+  // given columns/sessions onto the current page(s) of the doc.
+  const renderTimetableSection = async (cols, sess, cellMode = 'group') => {
+    const pagePlan = planTwoPages(numDays, displaySlots, sess, slotResolver, cols.length, headerH, pageH);
+    let y = await renderHeader(8, false);
+    let pagePart = 0;
 
-  for (const part of pagePlan) {
-    if (pagePart > 0) {
-      doc.addPage();
-      y = 12;
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(30, 58, 138);
-      const partLabel = lang === 'fr' ? 'Semaine — suite' : 'Week — continued';
-      doc.text(partLabel, pageW / 2, y, { align: 'center' });
-      y += 7;
+    for (const part of pagePlan) {
+      if (pagePart > 0) {
+        doc.addPage();
+        y = 12;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 58, 138);
+        const partLabel = lang === 'fr' ? 'Semaine — suite' : 'Week — continued';
+        doc.text(partLabel, pageW / 2, y, { align: 'center' });
+        y += 7;
+      }
+      pagePart++;
+
+      for (let di = part.start; di < part.end; di++) {
+        const daySlots = slotsForDay(di, displaySlots, sess, slotResolver, lang);
+        y = renderDayTable(doc, {
+          y, pageW, pageH, lang, numDays, dayIndex: di, weekDates, columnGroups: cols,
+          daySlots, displaySlots, allSessions: sess,
+          courseMap, lecturerMap, groupMap, roomMap, holidayMap, slotResolver, cellMode,
+        });
+      }
     }
-    pagePart++;
 
-    for (let di = part.start; di < part.end; di++) {
-      const daySlots = slotsForDay(di, displaySlots, filteredSessions, slotResolver, lang);
-      y = renderDayTable(doc, {
-        y, pageW, pageH, lang, numDays, dayIndex: di, weekDates, columnGroups,
-        daySlots, displaySlots, allSessions: filteredSessions,
-        courseMap, lecturerMap, holidayMap, slotResolver,
-      });
-    }
-  }
-
-  const sigY = Math.min((doc.lastAutoTable?.finalY || y) + 6, pageH - 24);
-  if (sigY < pageH - 18) {
-    const city = settings.city || 'Douala';
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(30, 30, 30);
-    doc.text(lang === 'fr' ? `Fait à ${city}, le` : `Done in ${city}, the`, pageW / 2, sigY, { align: 'center' });
-    const dateStr = weekMonday.toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-    doc.setFont('helvetica', 'bold');
-    doc.text(dateStr.toUpperCase(), pageW / 2, sigY + 4, { align: 'center' });
-    const dirTitle = settings.directorTitle || (lang === 'fr' ? 'Le Directeur' : 'The Director');
-    if (settings.schoolName) {
+    const sigY = Math.min((doc.lastAutoTable?.finalY || y) + 6, pageH - 24);
+    if (sigY < pageH - 18) {
+      const city = settings.city || 'Douala';
       doc.setFontSize(7);
-      doc.text(`${dirTitle} ${lang === 'fr' ? 'de' : 'of'} ${settings.schoolName}`, pageW / 2, sigY + 8, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(30, 30, 30);
+      doc.text(lang === 'fr' ? `Fait à ${city}, le` : `Done in ${city}, the`, pageW / 2, sigY, { align: 'center' });
+      const dateStr = weekMonday.toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+      doc.setFont('helvetica', 'bold');
+      doc.text(dateStr.toUpperCase(), pageW / 2, sigY + 4, { align: 'center' });
+      const dirTitle = settings.directorTitle || (lang === 'fr' ? 'Le Directeur' : 'The Director');
+      if (settings.schoolName) {
+        doc.setFontSize(7);
+        doc.text(`${dirTitle} ${lang === 'fr' ? 'de' : 'of'} ${settings.schoolName}`, pageW / 2, sigY + 8, { align: 'center' });
+      }
     }
+  };
+
+  if (perLecturerIds && perLecturerIds.length) {
+    // One teacher's personal sheet per page (cells show course · class · room).
+    let first = true;
+    for (const lid of perLecturerIds) {
+      const l = lecturerMap[lid];
+      if (!l) continue;
+      const sess = sessions.filter(s => s.lecId === lid);
+      if (sess.length === 0) continue;
+      if (!first) doc.addPage();
+      first = false;
+      await renderTimetableSection([{ id: '_all', name: l.name }], sess, 'lecturer');
+    }
+    if (first) await renderTimetableSection(columnGroups, filteredSessions);
+  } else if (perGroupIds && perGroupIds.length) {
+    // One class per page — for handing each cohort/level its own sheet.
+    let first = true;
+    for (const gid of perGroupIds) {
+      const g = groups.find(x => x.id === gid);
+      if (!g) continue;
+      const sess = sessions.filter(s => s.groups?.includes(gid));
+      if (sess.length === 0) continue;
+      if (!first) doc.addPage();
+      first = false;
+      await renderTimetableSection([g], sess);
+    }
+    if (first) await renderTimetableSection(columnGroups, filteredSessions); // nothing matched — fall back
+  } else {
+    await renderTimetableSection(columnGroups, filteredSessions);
   }
 
   const totalPages = doc.internal.getNumberOfPages();
@@ -410,7 +454,11 @@ export async function exportTimetablePDF({
     doc.text(`${lang === 'fr' ? 'Page' : 'Page'} ${i} / ${totalPages}`, pageW - 8, pageH - 4, { align: 'right' });
   }
 
-  const groupSuffix = filterGroupId ? `-${groups.find(g => g.id === filterGroupId)?.name || 'groupe'}` : '';
+  const groupSuffix = (perLecturerIds && perLecturerIds.length)
+    ? (lang === 'fr' ? '-enseignants' : '-teachers')
+    : (perGroupIds && perGroupIds.length)
+    ? (lang === 'fr' ? '-tous-niveaux' : '-all-levels')
+    : (filterGroupId ? `-${groups.find(g => g.id === filterGroupId)?.name || 'groupe'}` : '');
   const inst = (settings.institutionName || 'etablissement').replace(/[^a-zA-Z0-9]/g, '-').slice(0, 20);
   doc.save(`${inst}${groupSuffix}-semaine${settings.currentWeek || '1'}-${toISO(weekMonday)}.pdf`);
 }
