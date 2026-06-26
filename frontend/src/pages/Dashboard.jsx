@@ -10,17 +10,20 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { useLang } from '../hooks/useLang';
 import { badgeSuccess, badgeNeutral, panelInfo } from '../lib/uiBadges';
+import { computeStats } from '../lib/stats';
+import { getCourseName } from '../lib/courseUtils';
+import { getWeekDayCount, getWeekDayLabels } from '../lib/weekConfig';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { t } = useLang();
+  const { t, lang } = useLang();
 
-  const groupCount    = useLiveQuery(() => db.groups.count())    || 0;
-  const lecturerCount = useLiveQuery(() => db.lecturers.count()) || 0;
-  const roomCount     = useLiveQuery(() => db.rooms.count())     || 0;
-  const sessionCount  = useLiveQuery(() => db.sessions.count())  || 0;
-  const courseCount   = useLiveQuery(() => db.courses.count())   || 0;
+  const groups    = useLiveQuery(() => db.groups.toArray())    || [];
+  const lecturers = useLiveQuery(() => db.lecturers.toArray()) || [];
+  const rooms     = useLiveQuery(() => db.rooms.toArray())     || [];
+  const courses   = useLiveQuery(() => db.courses.toArray())   || [];
   const settings      = useLiveQuery(() => db.settings.toArray()) || [];
+  const groupCount = groups.length, lecturerCount = lecturers.length, roomCount = rooms.length, courseCount = courses.length;
 
   const settingsMap = React.useMemo(() => {
     const s = {};
@@ -29,6 +32,16 @@ export default function Dashboard() {
   }, [settings]);
 
   const sessions = useLiveQuery(() => db.sessions.toArray()) || [];
+  const sessionCount = sessions.length;
+
+  const instType = settingsMap.institutionType || 'university';
+  const numDays  = getWeekDayCount(instType, settingsMap);
+  const stats = React.useMemo(() => computeStats({
+    courses, lecturers, rooms, groups, sessions,
+    currentWeek: settingsMap.currentWeek || '1', totalWeeks: settingsMap.totalWeeks || '35',
+    institutionType: instType, numDays,
+  }), [courses, lecturers, rooms, groups, sessions, settingsMap, instType, numDays]);
+  const dayLabels = getWeekDayLabels(numDays, lang, true);
   const conflictCount = React.useMemo(() => {
     let count = 0;
     const slotMap = {};
@@ -160,6 +173,50 @@ export default function Dashboard() {
         ))}
       </motion.div>
 
+      {/* ── Analytics (only once a timetable exists) ── */}
+      {hasTimetable && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="space-y-6">
+          <h3 className="text-lg font-bold text-foreground">{t('dashAnalytics')}</h3>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <KpiCard label={t('dashSemesterProgress')} value={`${stats.semesterPct}%`} sub={t('dashWeekOf', stats.currentWeek, stats.totalWeeks)} />
+            <KpiCard label={t('dashWeeklyHours')} value={`${stats.totalHours} h`} />
+            <KpiCard label={t('dashAvgRoomUse')} value={`${stats.avgRoomUtil}%`} />
+            <KpiCard label={t('dashOverloaded')} value={stats.overloadedTeachers} danger={stats.overloadedTeachers > 0} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <StatPanel title={t('dashSubjectCoverage')} hint={t('dashSubjectCoverageHint')}>
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {stats.subjectProgress.map(s => (
+                  <BarRow key={s.id} label={s.code} sub={getCourseName(s, lang)} right={`${s.done}/${s.total}`} pct={s.pct} />
+                ))}
+              </div>
+            </StatPanel>
+            <StatPanel title={t('dashTeacherLoad')} hint={t('dashTeacherLoadHint')}>
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {stats.teacherLoad.map(tl => (
+                  <BarRow key={tl.id} label={tl.name} right={`${tl.hours}/${tl.max || '∞'}h`} pct={Math.min(100, tl.pct)} danger={tl.over} />
+                ))}
+              </div>
+            </StatPanel>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <StatPanel title={t('dashRoomUse')} hint={t('dashRoomUseHint')}>
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {stats.roomUtil.map(r => (
+                  <BarRow key={r.id} label={r.name} right={`${r.pct}%`} pct={r.pct} />
+                ))}
+              </div>
+            </StatPanel>
+            <StatPanel title={t('dashSessionsByDay')}>
+              <DayChart data={stats.byDay} labels={dayLabels} />
+            </StatPanel>
+          </div>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
           className="bg-card border border-border rounded-2xl p-6 shadow-sm lg:col-span-2">
@@ -218,6 +275,61 @@ export default function Dashboard() {
           )}
         </motion.div>
       </div>
+    </div>
+  );
+}
+
+// ── Analytics building blocks ───────────────────────────────────
+
+function KpiCard({ label, value, sub, danger }) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight">{label}</p>
+      <p className={`text-3xl font-bold mt-2 ${danger ? 'text-destructive' : 'text-foreground'}`}>{value}</p>
+      {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+function StatPanel({ title, hint, children }) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+      <h4 className="font-bold text-foreground">{title}</h4>
+      <p className="text-xs text-muted-foreground mt-0.5 mb-4">{hint || ' '}</p>
+      {children}
+    </div>
+  );
+}
+
+function BarRow({ label, sub, right, pct, danger }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs mb-1 gap-2">
+        <span className="font-medium text-foreground truncate" title={sub || label}>
+          {label}{sub && <span className="text-muted-foreground font-normal"> · {sub}</span>}
+        </span>
+        <span className={`font-mono shrink-0 ${danger ? 'text-destructive font-bold' : 'text-muted-foreground'}`}>{right}</span>
+      </div>
+      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${danger ? 'bg-red-500' : 'bg-emerald-500'}`}
+          style={{ width: `${Math.max(2, Math.min(100, pct))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function DayChart({ data, labels }) {
+  const max = Math.max(1, ...data);
+  const CHART_H = 130; // px — explicit so bar heights are reliable inside flex
+  return (
+    <div className="flex items-end justify-between gap-2" style={{ minHeight: CHART_H + 34 }}>
+      {data.map((v, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1.5">
+          <span className="text-xs font-bold text-foreground">{v}</span>
+          <div className="w-full bg-emerald-500 rounded-t-md" style={{ height: v > 0 ? Math.max(4, Math.round((v / max) * CHART_H)) : 0 }} />
+          <span className="text-[10px] text-muted-foreground">{labels[i]}</span>
+        </div>
+      ))}
     </div>
   );
 }
