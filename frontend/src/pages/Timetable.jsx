@@ -715,26 +715,26 @@ export default function Timetable() {
                       initial={{ opacity: 0, y: -8, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                      className="absolute right-0 top-11 z-50 bg-white dark:bg-slate-800 border border-border rounded-xl shadow-xl p-1 min-w-[180px]"
+                      className="absolute right-0 top-11 z-50 bg-white text-slate-900 border border-slate-200 rounded-xl shadow-xl p-1 min-w-[180px]"
                     >
                       <button onClick={exportPDF} disabled={exporting}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left disabled:opacity-50">
                         <FileText className="w-4 h-4 text-red-500" /> {t('ttExportPdf')}
                       </button>
                       <button onClick={exportAllLevels} disabled={exporting}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left disabled:opacity-50">
                         <Layers className="w-4 h-4 text-emerald-600" /> {t('ttExportAllLevels')}
                       </button>
                       <button onClick={exportPerLecturer} disabled={exporting}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left disabled:opacity-50">
                         <UserCheck className="w-4 h-4 text-violet-600" /> {t('ttExportPerLecturer')}
                       </button>
                       <button onClick={exportExcel}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left">
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left">
                         <FileSpreadsheet className="w-4 h-4 text-slate-600" /> {t('ttExportExcel')}
                       </button>
                       <button onClick={() => { window.print(); setShowExportMenu(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left">
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left">
                         <Printer className="w-4 h-4 text-blue-500" /> {t('ttPrint')}
                       </button>
                     </motion.div>

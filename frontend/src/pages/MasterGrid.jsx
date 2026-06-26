@@ -222,17 +222,17 @@ export default function MasterGrid() {
               </button>
               {showExport && (
                 <motion.div initial={{ opacity:0, y:-6 }} animate={{ opacity:1, y:0 }}
-                  className="absolute right-0 top-11 z-50 bg-white dark:bg-slate-800 border border-border rounded-xl shadow-xl p-1 min-w-47.5">
+                  className="absolute right-0 top-11 z-50 bg-white text-slate-900 border border-slate-200 rounded-xl shadow-xl p-1 min-w-47.5">
                   <button onClick={handlePDFExport} disabled={exporting}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left disabled:opacity-50">
+                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left disabled:opacity-50">
                     <span className="text-red-500 text-base">📄</span> PDF (format IUGET)
                   </button>
                   <button onClick={exportExcel}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left">
+                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left">
                     <FileSpreadsheet className="w-4 h-4 text-slate-600" /> Excel
                   </button>
                   <button onClick={() => { window.print(); setShowExport(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors text-left">
+                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm hover:bg-slate-100 transition-colors text-left">
                     <Printer className="w-4 h-4 text-blue-500" /> {t('mgPrint')}
                   </button>
                 </motion.div>
