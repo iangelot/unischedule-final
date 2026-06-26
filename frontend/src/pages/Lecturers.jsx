@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Plus, Search, UserCheck, Edit2, Trash2, X } from 'lucide-react';
 import { db, performOfflineAction, CAMEROON_SPECIALITIES } from '../db';
 import { specialityLabel } from '../lib/cameroonSpecialities';
+import { getCourseName } from '../lib/courseUtils';
 import { useLang } from '../hooks/useLang';
 
 const SPECIALITIES = Object.keys(CAMEROON_SPECIALITIES);
@@ -27,6 +28,32 @@ export default function Lecturers() {
     () => db.lecturers.filter(l => l.name.toLowerCase().includes(searchTerm.toLowerCase())).toArray(),
     [searchTerm]
   );
+
+  // Derived per-lecturer data: this week's hours + courses, and absences (makeup backlog).
+  const sessions = useLiveQuery(() => db.sessions.toArray()) || [];
+  const courses  = useLiveQuery(() => db.courses.toArray())  || [];
+  const makeups  = useLiveQuery(() => db.makeups.toArray())  || [];
+  const courseMap = React.useMemo(() => Object.fromEntries(courses.map(c => [c.id, c])), [courses]);
+  const [detailLec, setDetailLec] = useState(null);
+
+  const lecStats = React.useMemo(() => {
+    const m = {};
+    const get = (id) => (m[id] || (m[id] = { slots: 0, courses: {}, absences: 0, absByCourse: {} }));
+    sessions.forEach(s => {
+      if (!s.lecId) return;
+      const e = get(s.lecId);
+      e.slots += s.durationSlots || 1;
+      e.courses[s.courseId] = (e.courses[s.courseId] || 0) + 1;
+    });
+    makeups.forEach(mk => {
+      if (!mk.lecId) return;
+      const e = get(mk.lecId);
+      e.absences += 1;
+      e.absByCourse[mk.courseId] = (e.absByCourse[mk.courseId] || 0) + 1;
+    });
+    return m;
+  }, [sessions, makeups]);
+  const statOf = (id) => lecStats[id] || { slots: 0, courses: {}, absences: 0, absByCourse: {} };
 
   const openAdd  = () => { setEditItem(null); setForm(EMPTY_FORM); setShowModal(true); };
   const openEdit = (l) => {
@@ -79,14 +106,15 @@ export default function Lecturers() {
                 <th className="px-6 py-4 font-semibold">{t('cSpeciality')}</th>
                 <th className="px-6 py-4 font-semibold">{t('cAvailability')}</th>
                 <th className="px-6 py-4 font-semibold">{t('lecMaxLoad')}</th>
+                <th className="px-6 py-4 font-semibold">{t('lecThisWeek')}</th>
                 <th className="px-6 py-4 font-semibold text-right">{t('cActions')}</th>
               </tr>
             </thead>
             <tbody>
               {!lecturers ? (
-                <tr><td colSpan="6" className="px-6 py-8 text-center text-muted-foreground">{t('cLoading')}</td></tr>
+                <tr><td colSpan="7" className="px-6 py-8 text-center text-muted-foreground">{t('cLoading')}</td></tr>
               ) : lecturers.length === 0 ? (
-                <tr><td colSpan="6" className="px-6 py-12 text-center">
+                <tr><td colSpan="7" className="px-6 py-12 text-center">
                   <UserCheck className="w-12 h-12 text-muted-foreground/50 mb-3 mx-auto" />
                   <p className="text-muted-foreground font-medium">{t('lecNone')}</p>
                 </td></tr>
@@ -109,6 +137,22 @@ export default function Lecturers() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-muted-foreground">{lecturer.maxHours}{t('lecHoursWeek')}</td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const st = statOf(lecturer.id);
+                      const hrs = st.slots * 2;
+                      const over = lecturer.maxHours && hrs > lecturer.maxHours;
+                      return (
+                        <button onClick={() => setDetailLec(lecturer)} className="flex items-center gap-2 group/det" title={t('lecViewDetail')}>
+                          <span className={`font-semibold ${over ? 'text-red-600' : 'text-foreground'}`}>{hrs}{t('lecHoursWeek')}</span>
+                          {st.absences > 0 && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{st.absences} {t('lecAbsShort')}</span>
+                          )}
+                          <span className="text-[10px] text-primary underline opacity-0 group-hover/det:opacity-100 transition-opacity">{t('lecViewDetail')}</span>
+                        </button>
+                      );
+                    })()}
+                  </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => openEdit(lecturer)} className="p-1.5 text-muted-foreground hover:text-primary transition-colors"><Edit2 className="w-4 h-4" /></button>
@@ -190,6 +234,70 @@ export default function Lecturers() {
             </motion.div>
           </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* ── Lecturer detail (read-only: this week + absences) ── */}
+      <AnimatePresence>
+        {detailLec && (() => {
+          const st = statOf(detailLec.id);
+          const hrs = st.slots * 2;
+          const over = detailLec.maxHours && hrs > detailLec.maxHours;
+          const courseRows = Object.entries(st.courses).map(([cid, n]) => ({ code: courseMap[cid]?.code || cid, name: courseMap[cid] ? getCourseName(courseMap[cid], lang) : cid, n }));
+          const absRows = Object.entries(st.absByCourse).map(([cid, n]) => ({ code: courseMap[cid]?.code || cid, n }));
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+              onClick={e => e.target === e.currentTarget && setDetailLec(null)}>
+              <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
+                className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">{detailLec.name}</h3>
+                    <p className="text-xs text-muted-foreground">{typeLabel(detailLec.type)} · {detailLec.speciality ? specialityLabel(detailLec.speciality, lang) : t('lecAllSpec')}</p>
+                  </div>
+                  <button onClick={() => setDetailLec(null)} className="p-1 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/50"><X className="w-5 h-5" /></button>
+                </div>
+
+                {/* Weekly load */}
+                <div className="mb-5">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold text-muted-foreground uppercase tracking-wider">{t('lecThisWeek')}</span>
+                    <span className={`font-mono font-bold ${over ? 'text-red-600' : 'text-foreground'}`}>{hrs}/{detailLec.maxHours || '∞'}{t('lecHoursWeek')}</span>
+                  </div>
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${over ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.max(2, Math.min(100, detailLec.maxHours ? (hrs / detailLec.maxHours) * 100 : 0))}%` }} />
+                  </div>
+                </div>
+
+                {/* Courses this week */}
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('lecCoursesThisWeek')}</p>
+                {courseRows.length ? (
+                  <div className="space-y-1.5 mb-5">
+                    {courseRows.map(c => (
+                      <div key={c.code} className="flex items-center justify-between text-sm px-3 py-2 bg-muted/40 rounded-lg">
+                        <span className="text-foreground"><span className="font-mono font-bold text-primary">{c.code}</span> · {c.name}</span>
+                        <span className="text-muted-foreground text-xs">{t('lecSessionsN', c.n)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-sm text-muted-foreground mb-5">—</p>}
+
+                {/* Absences */}
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('lecAbsences')}</p>
+                {absRows.length ? (
+                  <div className="space-y-1.5">
+                    {absRows.map(a => (
+                      <div key={a.code} className="flex items-center justify-between text-sm px-3 py-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg">
+                        <span className="font-mono font-bold text-amber-700">{a.code}</span>
+                        <span className="text-amber-700 text-xs font-semibold">{t('lecAbsN', a.n)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-sm text-emerald-600">{t('lecNoAbsences')}</p>}
+              </motion.div>
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

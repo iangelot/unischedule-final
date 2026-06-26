@@ -24,6 +24,11 @@ export const UI_STRINGS = {
     lecStatus: 'Statut', lecMaxLoad: 'Charge max', lecAllSpec: 'Toutes filières',
     lecFullName: 'Nom complet', lecNamePh: 'ex: Dr. Tamo Jean', lecMainSpec: 'Filière principale',
     lecHoursWeek: 'h/sem',
+    lecThisWeek: 'Cette semaine', lecAbsShort: 'abs.', lecViewDetail: 'voir détail',
+    lecCoursesThisWeek: 'Cours cette semaine', lecAbsences: 'Absences (à rattraper)',
+    lecNoAbsences: 'Aucune absence enregistrée.',
+    lecSessionsN: (n) => `${n} séance${n > 1 ? 's' : ''}`,
+    lecAbsN: (n) => `${n} absence${n > 1 ? 's' : ''}`,
     // Rooms page
     rmTitle: 'Salles', rmSubtitle: 'Gérez les salles et leurs capacités.',
     rmAddBtn: 'Ajouter une salle', rmSearchPh: 'Rechercher une salle...',
@@ -330,6 +335,11 @@ export const UI_STRINGS = {
     lecStatus: 'Status', lecMaxLoad: 'Max load', lecAllSpec: 'All specialities',
     lecFullName: 'Full name', lecNamePh: 'e.g. Dr. Tamo Jean', lecMainSpec: 'Main speciality',
     lecHoursWeek: 'h/wk',
+    lecThisWeek: 'This week', lecAbsShort: 'abs.', lecViewDetail: 'view detail',
+    lecCoursesThisWeek: 'Courses this week', lecAbsences: 'Absences (to make up)',
+    lecNoAbsences: 'No absences recorded.',
+    lecSessionsN: (n) => `${n} session${n > 1 ? 's' : ''}`,
+    lecAbsN: (n) => `${n} absence${n > 1 ? 's' : ''}`,
     // Rooms page
     rmTitle: 'Rooms', rmSubtitle: 'Manage rooms and their capacities.',
     rmAddBtn: 'Add a room', rmSearchPh: 'Search a room...',
