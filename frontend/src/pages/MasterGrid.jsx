@@ -87,22 +87,45 @@ export default function MasterGrid() {
     const d = new Date(weekMonday); d.setDate(d.getDate() + i); return d;
   });
 
-  // ── Specialities list (from filtered groups) ─────────────────
-  const specialities = React.useMemo(() => {
+  // ── Pivot dimension: columns can be specialities, rooms, or teachers ──
+  const [pivotBy, setPivotBy] = useState('speciality'); // 'speciality' | 'room' | 'teacher'
+
+  const columnDefs = React.useMemo(() => {
+    if (pivotBy === 'room') {
+      return rooms
+        .filter(r => modeFilter === 'evening' ? r.eve : true)
+        .map(r => ({ key: r.id, label: r.name }));
+    }
+    if (pivotBy === 'teacher') {
+      return lecturers
+        .filter(l => modeFilter === 'all' ? true : (modeFilter === 'evening' ? l.eve : l.day))
+        .map(l => ({ key: l.id, label: l.name }));
+    }
     const seen = new Set(); const list = [];
     groups.forEach(g => {
       if (modeFilter !== 'all' && g.mode !== modeFilter) return;
       const sp = g.speciality || g.code || g.name;
-      if (!seen.has(sp)) { seen.add(sp); list.push(sp); }
+      if (!seen.has(sp)) { seen.add(sp); list.push({ key: sp, label: specialityLabel(sp, lang) }); }
     });
     return list;
-  }, [groups, modeFilter]);
+  }, [pivotBy, rooms, lecturers, groups, modeFilter, lang]);
 
+  // `specialities` stays as the array of column KEYS so the table renderer is unchanged.
+  const specialities = React.useMemo(() => columnDefs.map(c => c.key), [columnDefs]);
+  const colLabelMap  = React.useMemo(() => Object.fromEntries(columnDefs.map(c => [c.key, c.label])), [columnDefs]);
   const specColorMap = React.useMemo(() => {
     const m = {};
     specialities.forEach((s, i) => { m[s] = i; });
     return m;
   }, [specialities]);
+
+  // Which column a session falls under, given the current pivot.
+  const colKeyOf = React.useCallback((s) => {
+    if (pivotBy === 'room') return s.roomId;
+    if (pivotBy === 'teacher') return s.lecId;
+    const fg = groups.find(gg => s.groups?.includes(gg.id));
+    return fg?.speciality || fg?.code || fg?.name || 'Autre';
+  }, [pivotBy, groups]);
 
   // ── Grid ─────────────────────────────────────────────────────
   const grid = React.useMemo(() => {
@@ -114,15 +137,20 @@ export default function MasterGrid() {
     sessions.forEach(s => {
       if (modeFilter !== 'all' && s.mode !== modeFilter) return;
       if (s.day < 0 || s.day >= numDays || s.slot < 0 || s.slot >= allSlots.length) return;
-      const firstGroup = groups.find(gg => s.groups?.includes(gg.id));
-      const sp = firstGroup?.speciality || firstGroup?.code || firstGroup?.name || 'Autre';
-      if (!g[s.day][s.slot][sp]) g[s.day][s.slot][sp] = [];
-      g[s.day][s.slot][sp].push(s);
+      const key = colKeyOf(s);
+      if (key == null) return;
+      if (!g[s.day][s.slot][key]) g[s.day][s.slot][key] = [];
+      g[s.day][s.slot][key].push(s);
     });
     return g;
-  }, [sessions, groups, specialities, numDays, allSlots, modeFilter]);
+  }, [sessions, specialities, numDays, allSlots, modeFilter, colKeyOf]);
 
   const dateRange = formatWeekRange(weekMonday, numDays, lang);
+  const pivotLabel = pivotBy === 'room'
+    ? (lang === 'fr' ? 'Salles' : 'Rooms')
+    : pivotBy === 'teacher'
+    ? (lang === 'fr' ? 'Enseignants' : 'Teachers')
+    : (lang === 'fr' ? 'Filières' : 'Specialities');
 
   // ── PDF Export ───────────────────────────────────────────────
   const handlePDFExport = async () => {
@@ -150,7 +178,7 @@ export default function MasterGrid() {
       [settings.institutionName || 'Grille Maîtresse'],
       [settings.semester, settings.cohort].filter(Boolean).join(' — '),
       [dateRange], [],
-      ['Horaire / Slot', ...DAYS.flatMap(d => specialities.map(sp => `${d} — ${sp}`))],
+      ['Horaire / Slot', ...DAYS.flatMap(d => specialities.map(sp => `${d} — ${colLabelMap[sp] || sp}`))],
     ];
     displaySlots.forEach(slot => {
       const si = allSlots.findIndex(s => s.label === slot.label);
@@ -188,7 +216,7 @@ export default function MasterGrid() {
 
       <div className={panelInfo}>
         <p className="font-medium">{t('mgLegendTitle')}</p>
-        <p className="mt-1">{t('mgLegendBody')}</p>
+        <p className="mt-1">{t('mgPivotHint')}</p>
       </div>
 
       {/* ── Header ── */}
@@ -199,10 +227,21 @@ export default function MasterGrid() {
             <h2 className="text-2xl font-bold text-foreground">{t('mgTitle')}</h2>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {t('mgSubtitle', specialities.length, sessions.length)}
+            {lang === 'fr'
+              ? `Vue combinée · ${specialities.length} ${pivotLabel.toLowerCase()} · ${sessions.length} séances`
+              : `Combined view · ${specialities.length} ${pivotLabel.toLowerCase()} · ${sessions.length} sessions`}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
+          {/* Pivot dimension — what the columns represent */}
+          <div className="flex rounded-xl border border-border overflow-hidden bg-card text-xs">
+            {[['speciality', t('mgPivotSpeciality')], ['room', t('mgPivotRoom')], ['teacher', t('mgPivotTeacher')]].map(([v, l]) => (
+              <button key={v} onClick={() => setPivotBy(v)}
+                className={`px-3 py-2 font-medium transition-colors ${pivotBy === v ? 'bg-accent-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
           {/* Mode filter */}
           <div className="flex rounded-xl border border-border overflow-hidden bg-card text-xs">
             {[['all',t('ttAll')],['day',t('cDay')],['evening',t('cEvening')]].map(([v,l]) => (
@@ -268,7 +307,7 @@ export default function MasterGrid() {
       {specialities.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {specialities.map(sp => (
-            <span key={sp} className={`text-xs font-semibold px-3 py-1 rounded-full border ${specColorMap[sp]}`}>{specialityLabel(sp, lang)}</span>
+            <span key={sp} className="text-xs font-semibold px-3 py-1 rounded-full border border-border bg-card text-muted-foreground">{colLabelMap[sp] || sp}</span>
           ))}
         </div>
       )}
@@ -293,7 +332,7 @@ export default function MasterGrid() {
                 <tr className="bg-primary text-white">
                   <th rowSpan={2} className="px-3 py-2 text-left font-bold border-r border-primary-700 bg-primary-900 text-xs whitespace-nowrap align-middle"
                     style={{ minWidth: 80 }}>
-                    {lang === 'fr' ? 'Filières →' : 'Specialities →'}<br />
+                    {pivotLabel} →<br />
                     <span className="font-normal opacity-70">{lang === 'fr' ? 'Jours ↓' : 'Days ↓'}</span>
                   </th>
                   {DAYS.map((d, di) => {
@@ -321,7 +360,7 @@ export default function MasterGrid() {
                         <th key={`${di}-${si}`}
                           className={`px-1 py-1.5 text-center font-semibold border-r border-primary-700 last:border-r-0 ${isSat ? 'bg-indigo-800' : ''}`}
                           style={{ minWidth: 90, fontSize: 8 }}>
-                          {(() => { const lbl = specialityLabel(sp, lang); return lbl.length > 16 ? lbl.slice(0, 15) + '…' : lbl; })()}
+                          {(() => { const lbl = colLabelMap[sp] || sp; return lbl.length > 16 ? lbl.slice(0, 15) + '…' : lbl; })()}
                         </th>
                       );
                     })
