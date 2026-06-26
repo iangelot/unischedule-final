@@ -165,7 +165,12 @@ function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDay
       const startPool = starts.length ? starts : slots;
       const allowed = rooms.filter(r => (s.mode === 'evening' ? r.eve : true));
       const fitting = allowed.filter(r => !s.groupSize || r.cap >= s.groupSize);
-      const pool = fitting.length ? fitting : allowed;
+      let pool = fitting.length ? fitting : allowed;
+      // Try required-type rooms first (clash-free placement still wins over type).
+      if (s.roomType) {
+        const typed = pool.filter(r => r.type === s.roomType);
+        if (typed.length) pool = [...typed, ...pool.filter(r => r.type !== s.roomType)];
+      }
       let placed = false;
       for (const day of schedulableDays) {
         for (const slot of startPool) {
@@ -189,9 +194,13 @@ function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDay
 
 function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSlotIndices, schedulableDays = [0, 1, 2, 3, 4], currentWeek = '1', totalWeeks = '35', makeups = [], allSlotDefs = []) {
   const sessions = [];
-  const pickRoom = (availRooms, size) => {
-    const fitting = availRooms.filter(r => r.cap >= size);
-    const pool = fitting.length ? fitting : availRooms;
+  const pickRoom = (availRooms, size, roomType) => {
+    let pool = availRooms.filter(r => r.cap >= size);
+    if (roomType) {
+      const typed = pool.filter(r => r.type === roomType);
+      if (typed.length) pool = typed;   // prefer the required room type (e.g. lab) when one fits
+    }
+    if (!pool.length) pool = availRooms;
     return pool[Math.floor(Math.random() * pool.length)];
   };
   const randDay = () => schedulableDays[Math.floor(Math.random() * schedulableDays.length)];
@@ -240,9 +249,9 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
 
       weekSlots.forEach((meta) => {
         const lec  = courseLecs[Math.floor(Math.random() * courseLecs.length)];
-        // Randomize among rooms that fit the group (not the first match) so the
-        // population explores room assignments instead of all piling into Amphi 500.
-        const room = pickRoom(availRooms, groupSize);
+        // Randomize among rooms that fit the group AND match the required room
+        // type (e.g. a lab course → a lab), exploring instead of always Amphi 500.
+        const room = pickRoom(availRooms, groupSize, course.roomType);
         const day  = randDay();
         const dur  = meta.durationSlots || 1;
         const slot = pickStart(dur, availSlots, allSlotDefs); // valid contiguous start for blocks
@@ -252,6 +261,7 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
           courseId: course.id,
           lecId:    lec?.id,
           roomId:   room?.id,
+          roomType: course.roomType || null,   // required room type, if any
           day,
           slot,
           durationSlots: dur,
@@ -379,6 +389,16 @@ function calculateFitness(sessions, rooms, lecturers, holidaySet = new Set()) {
   });
   Object.values(groupCourseDay).forEach(c => { if (c > 1) score -= SOFT_PENALTY * (c - 1); });
 
+  // Soft (but weighted above other soft prefs): a course must sit in a room of
+  // its required type (e.g. a lab in a lab). Stronger pull than gaps/spread,
+  // still below the hard clash penalties so it never forces a conflict.
+  const ROOMTYPE_PENALTY = 10;
+  sessions.forEach(s => {
+    if (!s.roomType || !s.roomId) return;
+    const r = roomMap[s.roomId];
+    if (r && r.type !== s.roomType) score -= ROOMTYPE_PENALTY;
+  });
+
   // Do NOT floor at 0 — a floor flattens the gradient across all heavily-
   // conflicted schedules (they'd all tie), so the GA can't tell "27 clashes"
   // from "3 clashes" and stops improving. Raw (possibly negative) score keeps
@@ -422,10 +442,11 @@ function mutate(schedule, rooms, lecturers, daySlotIndices, eveSlotIndices, sche
       s.day  = schedulableDays[Math.floor(Math.random() * schedulableDays.length)];
       s.slot = pickStart(s.durationSlots || 1, availSlots, allSlotDefs); // keep blocks contiguous
     } else if (roll < 0.7) {
-      // Prefer rooms that fit the group, falling back to any allowed room.
+      // Prefer rooms that fit the group AND match the required type, falling back gracefully.
       const allowed = rooms.filter(r => s.mode === 'evening' ? r.eve : true);
       const fitting = allowed.filter(r => !s.groupSize || r.cap >= s.groupSize);
-      const pool = fitting.length ? fitting : allowed;
+      let pool = fitting.length ? fitting : allowed;
+      if (s.roomType) { const typed = pool.filter(r => r.type === s.roomType); if (typed.length) pool = typed; }
       if (pool.length) s.roomId = pool[Math.floor(Math.random() * pool.length)].id;
     } else {
       const candidates = lecturers.filter(l => s.mode === 'evening' ? l.eve : l.day);

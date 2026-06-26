@@ -358,6 +358,7 @@ export const UI_STRINGS = {
     crsHoursWeek: 'Hours / week', crsHoursHint: '2h per slot → sessions/week auto-calculated',
     crsSessionsSem: 'Sessions per semester', crsSessionsPh: 'e.g. 30', crsSessionsHint: 'Empty = hours/week × number of weeks',
     crsBlock: 'Block course (e.g. 4h lab in one sitting, 1 session)',
+    crsRoomType: 'Required room type', crsAnyRoom: 'Any room',
     crsChoose: '— Choose —', crsHoursUnit: 'h',
     // Holidays page
     holTitle: 'Public Holidays & Breaks', holSubtitle: 'These dates appear in the timetable with a colored banner.',

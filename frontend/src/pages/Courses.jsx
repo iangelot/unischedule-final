@@ -8,7 +8,14 @@ import { normalizeCourse, prepareCourseForSave, courseToForm, getCourseName } fr
 import { useLang } from '../hooks/useLang';
 
 const SPECIALITIES = Object.keys(CAMEROON_SPECIALITIES);
-const EMPTY_FORM = { code: '', name_en: '', name_fr: '', credits: 3, hoursPerWeek: 3, totalSessions: '', block: false, shareable: false, speciality: '' };
+const EMPTY_FORM = { code: '', name_en: '', name_fr: '', credits: 3, hoursPerWeek: 3, totalSessions: '', block: false, roomType: '', shareable: false, speciality: '' };
+const ROOM_TYPE_OPTS = [
+  { id: '', key: 'crsAnyRoom' },
+  { id: 'classroom', key: 'rmClassroom' },
+  { id: 'lab', key: 'rmLab' },
+  { id: 'amphitheater', key: 'rmAmphi' },
+  { id: 'seminar', key: 'rmSeminar' },
+];
 
 export default function Courses() {
   const { t, lang } = useLang();
@@ -188,6 +195,13 @@ export default function Courses() {
                   </div>
                   <span className="text-sm text-muted-foreground">{t('crsBlock')}</span>
                 </label>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsRoomType')}</label>
+                  <select value={form.roomType} onChange={e => setForm(f => ({...f, roomType: e.target.value}))}
+                    className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
+                    {ROOM_TYPE_OPTS.map(o => <option key={o.id} value={o.id}>{t(o.key)}</option>)}
+                  </select>
+                </div>
                 {!form.shareable && (
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('cSpeciality')}</label>

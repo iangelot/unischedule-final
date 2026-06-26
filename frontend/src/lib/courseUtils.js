@@ -44,6 +44,7 @@ export function prepareCourseForSave(form, editItem) {
     hoursPerWeek: form.hoursPerWeek,
     totalSessions: form.totalSessions ? Number(form.totalSessions) : null,
     block: !!form.block,   // delivered as one contiguous block (e.g. 4h lab) vs split 2h periods
+    roomType: form.roomType || null,   // required room type (e.g. 'lab'); null = any
     shareable: form.shareable,
     speciality: form.shareable ? null : (form.speciality || null),
   };
@@ -61,6 +62,7 @@ export function courseToForm(c) {
     hoursPerWeek: n.hoursPerWeek ?? 3,
     totalSessions: n.totalSessions ?? '',
     block: !!n.block,
+    roomType: n.roomType || '',
     shareable: !!n.shareable,
     speciality: n.speciality || '',
   };
