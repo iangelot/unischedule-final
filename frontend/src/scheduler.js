@@ -69,15 +69,18 @@ export function generateTimetable(courses, lecturers, rooms, groups, institution
   // multi-slot block occupies time-contiguous slots (no spanning the lunch break).
   const allSlotDefs = [...daySlots, ...eveSlots];
 
+  // Per-teacher hard unavailability: day indices a lecturer cannot teach.
+  const lecUnavail = new Map(lecturers.map(l => [l.id, new Set(l.unavailableDays || [])]));
+
   let population = Array.from({ length: POP_SIZE }, () =>
-    randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSlotIndices, schedulableDays, currentWeek, totalWeeks, makeups, allSlotDefs)
+    randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSlotIndices, schedulableDays, currentWeek, totalWeeks, makeups, allSlotDefs, lecUnavail)
   );
 
   let bestSchedule = null;
   let bestFitness  = -Infinity;
 
   for (let g = 0; g < GENERATIONS; g++) {
-    population.forEach(s => { s.fitness = calculateFitness(s.sessions, rooms, lecturers, holidaySet); });
+    population.forEach(s => { s.fitness = calculateFitness(s.sessions, rooms, lecturers, holidaySet, lecUnavail); });
     population.sort((a, b) => b.fitness - a.fitness);
 
     if (population[0].fitness > bestFitness) {
@@ -93,7 +96,7 @@ export function generateTimetable(courses, lecturers, rooms, groups, institution
       const p2  = tournamentSelect(population);
       let child = crossover(p1, p2);
       // Mutate most children (the two elites above are preserved unchanged).
-      if (Math.random() < 0.85) child = mutate(child, rooms, lecturers, daySlotIndices, eveSlotIndices, schedulableDays, allSlotDefs);
+      if (Math.random() < 0.85) child = mutate(child, rooms, lecturers, daySlotIndices, eveSlotIndices, schedulableDays, allSlotDefs, lecUnavail);
       newPop.push(child);
     }
     population = newPop;
@@ -103,11 +106,12 @@ export function generateTimetable(courses, lecturers, rooms, groups, institution
   // Deterministic repair: the GA gets close but isn't guaranteed conflict-free.
   // This pass relocates any session still clashing (group / lecturer / room) to
   // a slot that is free on all three axes, so the result is reliably postable.
-  return repairSchedule(bestSchedule.sessions, daySlotIndices, eveSlotIndices, schedulableDays, rooms, allSlotDefs);
+  return repairSchedule(bestSchedule.sessions, daySlotIndices, eveSlotIndices, schedulableDays, rooms, allSlotDefs, lecUnavail);
 }
 
-function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDays, rooms, allSlotDefs = []) {
+function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDays, rooms, allSlotDefs = [], lecUnavail = new Map()) {
   const key = (a, b, c) => `${a}-${b}-${c}`;
+  const unavailable = (lecId, day) => lecId && lecUnavail.get(lecId)?.has(day);
   // Occupancy COUNTS per cell. A block session occupies EVERY slot it spans, so
   // each session is expanded via occupiedSlots — this is what keeps a 4h block
   // from colliding with a 2h class in its second hour.
@@ -140,8 +144,10 @@ function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDay
     }
     return true;
   };
-  // With this session lifted out, does any cell it occupies still clash?
+  // With this session lifted out, does any cell it occupies still clash — or is
+  // its teacher unavailable on this day?
   const conflicted = (s) => {
+    if (unavailable(s.lecId, s.day)) return true;
     remove(s);
     let bad = false;
     for (const slot of occupiedSlots(s)) {
@@ -173,6 +179,7 @@ function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDay
       }
       let placed = false;
       for (const day of schedulableDays) {
+        if (unavailable(s.lecId, day)) continue; // never relocate onto a day the teacher is off
         for (const slot of startPool) {
           for (const room of pool) {
             if (freeAt(s, day, slot, room.id)) {
@@ -192,7 +199,7 @@ function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDay
   return sessions;
 }
 
-function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSlotIndices, schedulableDays = [0, 1, 2, 3, 4], currentWeek = '1', totalWeeks = '35', makeups = [], allSlotDefs = []) {
+function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSlotIndices, schedulableDays = [0, 1, 2, 3, 4], currentWeek = '1', totalWeeks = '35', makeups = [], allSlotDefs = [], lecUnavail = new Map()) {
   const sessions = [];
   const pickRoom = (availRooms, size, roomType) => {
     let pool = availRooms.filter(r => r.cap >= size);
@@ -203,7 +210,13 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
     if (!pool.length) pool = availRooms;
     return pool[Math.floor(Math.random() * pool.length)];
   };
-  const randDay = () => schedulableDays[Math.floor(Math.random() * schedulableDays.length)];
+  // Prefer a day the teacher is actually available (repair guarantees it later).
+  const randDayFor = (lecId) => {
+    const off = lecUnavail.get(lecId);
+    const ok = off ? schedulableDays.filter(d => !off.has(d)) : schedulableDays;
+    const pool = ok.length ? ok : schedulableDays;
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
 
   groups.forEach(group => {
     const isEvening = group.mode === 'evening';
@@ -226,7 +239,7 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
         courseId: m.courseId,
         lecId:    lec?.id,
         roomId:   room?.id,
-        day:      randDay(),
+        day:      randDayFor(lec?.id),
         slot:     availSlots[Math.floor(Math.random() * availSlots.length)],
         groups:   [group.id],
         groupSize,
@@ -252,7 +265,7 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
         // Randomize among rooms that fit the group AND match the required room
         // type (e.g. a lab course → a lab), exploring instead of always Amphi 500.
         const room = pickRoom(availRooms, groupSize, course.roomType);
-        const day  = randDay();
+        const day  = randDayFor(lec?.id);
         const dur  = meta.durationSlots || 1;
         const slot = pickStart(dur, availSlots, allSlotDefs); // valid contiguous start for blocks
 
@@ -281,10 +294,15 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
   return { sessions, fitness: 0 };
 }
 
-function calculateFitness(sessions, rooms, lecturers, holidaySet = new Set()) {
+function calculateFitness(sessions, rooms, lecturers, holidaySet = new Set(), lecUnavail = new Map()) {
   let score = 100;
   const HARD_PENALTY = 20;
   const SOFT_PENALTY = 5;
+
+  // Hard constraint: a teacher cannot teach on a day they're unavailable.
+  if (lecUnavail.size) {
+    sessions.forEach(s => { if (s.lecId && lecUnavail.get(s.lecId)?.has(s.day)) score -= HARD_PENALTY; });
+  }
 
   // Hard constraint: nothing may be scheduled on a public holiday.
   if (holidaySet.size) {
@@ -424,7 +442,7 @@ function crossover(p1, p2) {
   };
 }
 
-function mutate(schedule, rooms, lecturers, daySlotIndices, eveSlotIndices, schedulableDays = [0, 1, 2, 3, 4], allSlotDefs = []) {
+function mutate(schedule, rooms, lecturers, daySlotIndices, eveSlotIndices, schedulableDays = [0, 1, 2, 3, 4], allSlotDefs = [], lecUnavail = new Map()) {
   if (!schedule.sessions.length) return schedule;
   const copy = { ...schedule, sessions: schedule.sessions.map(s => ({ ...s })) };
   const mutable = copy.sessions.filter(s => !s.locked);
@@ -439,7 +457,10 @@ function mutate(schedule, rooms, lecturers, daySlotIndices, eveSlotIndices, sche
     const availSlots = s.mode === 'evening' ? eveSlotIndices : daySlotIndices;
 
     if (roll < 0.4 && availSlots.length) {
-      s.day  = schedulableDays[Math.floor(Math.random() * schedulableDays.length)];
+      const off = lecUnavail.get(s.lecId);
+      const okDays = off ? schedulableDays.filter(d => !off.has(d)) : schedulableDays;
+      const dayPool = okDays.length ? okDays : schedulableDays;
+      s.day  = dayPool[Math.floor(Math.random() * dayPool.length)];
       s.slot = pickStart(s.durationSlots || 1, availSlots, allSlotDefs); // keep blocks contiguous
     } else if (roll < 0.7) {
       // Prefer rooms that fit the group AND match the required type, falling back gracefully.

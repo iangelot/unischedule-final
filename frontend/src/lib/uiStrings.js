@@ -29,6 +29,8 @@ export const UI_STRINGS = {
     lecNoAbsences: 'Aucune absence enregistrée.',
     lecSessionsN: (n) => `${n} séance${n > 1 ? 's' : ''}`,
     lecAbsN: (n) => `${n} absence${n > 1 ? 's' : ''}`,
+    lecUnavailDays: 'Jours indisponibles', lecUnavailHint: "Le générateur ne placera aucun cours de cet enseignant ces jours-là.",
+    wdMon: 'Lun', wdTue: 'Mar', wdWed: 'Mer', wdThu: 'Jeu', wdFri: 'Ven', wdSat: 'Sam', wdSun: 'Dim',
     // Rooms page
     rmTitle: 'Salles', rmSubtitle: 'Gérez les salles et leurs capacités.',
     rmAddBtn: 'Ajouter une salle', rmSearchPh: 'Rechercher une salle...',
@@ -340,6 +342,8 @@ export const UI_STRINGS = {
     lecNoAbsences: 'No absences recorded.',
     lecSessionsN: (n) => `${n} session${n > 1 ? 's' : ''}`,
     lecAbsN: (n) => `${n} absence${n > 1 ? 's' : ''}`,
+    lecUnavailDays: 'Unavailable days', lecUnavailHint: "The generator won't place any of this teacher's classes on these days.",
+    wdMon: 'Mon', wdTue: 'Tue', wdWed: 'Wed', wdThu: 'Thu', wdFri: 'Fri', wdSat: 'Sat', wdSun: 'Sun',
     // Rooms page
     rmTitle: 'Rooms', rmSubtitle: 'Manage rooms and their capacities.',
     rmAddBtn: 'Add a room', rmSearchPh: 'Search a room...',

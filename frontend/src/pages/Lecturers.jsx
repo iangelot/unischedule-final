@@ -14,7 +14,8 @@ const CONTRACT_TYPES = [
   { id: 'visiting',  key: 'lecVisiting' },
   { id: 'part_time', key: 'lecPartTime' },
 ];
-const EMPTY_FORM = { name: '', type: 'permanent', day: true, eve: false, maxHours: 10, speciality: '' };
+const EMPTY_FORM = { name: '', type: 'permanent', day: true, eve: false, maxHours: 10, speciality: '', unavailableDays: [] };
+const DAY_KEYS = ['wdMon', 'wdTue', 'wdWed', 'wdThu', 'wdFri', 'wdSat', 'wdSun'];
 
 export default function Lecturers() {
   const { t, lang } = useLang();
@@ -58,7 +59,7 @@ export default function Lecturers() {
   const openAdd  = () => { setEditItem(null); setForm(EMPTY_FORM); setShowModal(true); };
   const openEdit = (l) => {
     setEditItem(l);
-    setForm({ name: l.name, type: l.type, day: l.day, eve: l.eve, maxHours: l.maxHours, speciality: l.speciality || '' });
+    setForm({ name: l.name, type: l.type, day: l.day, eve: l.eve, maxHours: l.maxHours, speciality: l.speciality || '', unavailableDays: l.unavailableDays || [] });
     setShowModal(true);
   };
 
@@ -214,6 +215,26 @@ export default function Lecturers() {
                       {t('cEvening')}
                     </button>
                   </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">{t('lecUnavailDays')}</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DAY_KEYS.map((dk, di) => {
+                      const off = (form.unavailableDays || []).includes(di);
+                      return (
+                        <button key={di} type="button"
+                          onClick={() => setForm(f => {
+                            const set = new Set(f.unavailableDays || []);
+                            set.has(di) ? set.delete(di) : set.add(di);
+                            return { ...f, unavailableDays: [...set].sort((a, b) => a - b) };
+                          })}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${off ? 'bg-red-100 text-red-700 border-red-300 line-through' : 'border-border text-muted-foreground hover:bg-muted/50'}`}>
+                          {t(dk)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">{t('lecUnavailHint')}</p>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
