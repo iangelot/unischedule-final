@@ -368,11 +368,16 @@ function calculateFitness(sessions, rooms, lecturers, holidaySet = new Set(), le
   sessions.forEach(s => {
     if (s.lecId) lecSessionCount[s.lecId] = (lecSessionCount[s.lecId] || 0) + occupiedSlots(s).length;
   });
+  // Penalize overload by the SQUARE of the relative overage (hours/max). Using
+  // the ratio (not absolute hours) is fair across teachers with different maxes,
+  // and squaring penalizes CONCENTRATION — so the GA equalizes relative load
+  // instead of dumping it on a few. (Repair still guarantees clash-free.)
+  const LOAD_WEIGHT = 12;
   Object.entries(lecSessionCount).forEach(([lecId, slots]) => {
     const max = lecMap[lecId]?.maxHours;
     if (!max) return;
-    const hours = slots * SLOT_HOURS;
-    if (hours > max) score -= SOFT_PENALTY * (hours - max);
+    const ratio = (slots * SLOT_HOURS) / max;
+    if (ratio > 1) score -= LOAD_WEIGHT * (ratio - 1) * (ratio - 1);
   });
 
   // Soft: compact days — penalize idle gaps between a group's classes on the
