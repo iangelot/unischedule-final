@@ -43,8 +43,10 @@ export default function Lecturers() {
     sessions.forEach(s => {
       if (!s.lecId) return;
       const e = get(s.lecId);
-      e.slots += s.durationSlots || 1;
-      e.courses[s.courseId] = (e.courses[s.courseId] || 0) + 1;
+      const dur = s.durationSlots || 1;
+      e.slots += dur;
+      const c = e.courses[s.courseId] || (e.courses[s.courseId] = { n: 0, slots: 0 });
+      c.n += 1; c.slots += dur;
     });
     makeups.forEach(mk => {
       if (!mk.lecId) return;
@@ -263,7 +265,7 @@ export default function Lecturers() {
           const st = statOf(detailLec.id);
           const hrs = st.slots * 2;
           const over = detailLec.maxHours && hrs > detailLec.maxHours;
-          const courseRows = Object.entries(st.courses).map(([cid, n]) => ({ code: courseMap[cid]?.code || cid, name: courseMap[cid] ? getCourseName(courseMap[cid], lang) : cid, n }));
+          const courseRows = Object.entries(st.courses).map(([cid, c]) => ({ code: courseMap[cid]?.code || cid, name: courseMap[cid] ? getCourseName(courseMap[cid], lang) : cid, n: c.n, hours: c.slots * 2 }));
           const absRows = Object.entries(st.absByCourse).map(([cid, n]) => ({ code: courseMap[cid]?.code || cid, n }));
           return (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -297,7 +299,7 @@ export default function Lecturers() {
                     {courseRows.map(c => (
                       <div key={c.code} className="flex items-center justify-between text-sm px-3 py-2 bg-muted/40 rounded-lg">
                         <span className="text-foreground"><span className="font-mono font-bold text-primary">{c.code}</span> · {c.name}</span>
-                        <span className="text-muted-foreground text-xs">{t('lecSessionsN', c.n)}</span>
+                        <span className="text-muted-foreground text-xs whitespace-nowrap">{t('lecSessionsN', c.n)} · {c.hours}{t('lecHoursWeek')}</span>
                       </div>
                     ))}
                   </div>

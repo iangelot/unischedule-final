@@ -4,10 +4,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Play, Loader2, CheckCircle2, Download, Printer, RefreshCw,
   AlertCircle, FileSpreadsheet, FileText, ChevronLeft, ChevronRight,
-  GripVertical, Lock, Unlock, CalendarX, Trash2, Copy, UserCheck, Layers
+  GripVertical, Lock, Unlock, CalendarX, Trash2, Copy, UserCheck, Layers, Plus, X
 } from 'lucide-react';
 import { db, getSetting, TIME_SLOTS } from '../db';
 import { specialityLabel } from '../lib/cameroonSpecialities';
+import { coursesForGroup, lecturersForCourse, getCourseName } from '../lib/courseUtils';
 import { generateTimetable } from '../scheduler';
 import { diagnoseFeasibility } from '../lib/diagnostics';
 import { exportTimetablePDF } from '../lib/exportPDF';
@@ -71,6 +72,8 @@ export default function Timetable() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const viewArchiveId = searchParams.get('view');
+  const [addOpen, setAddOpen]       = useState(false);
+  const [addForm, setAddForm]       = useState({ groupId: '', courseId: '', lecId: '', roomId: '', day: 0, slotLabel: '' });
   const [status, setStatus]         = useState('idle');
   const [genLog, setGenLog]         = useState([]);
   const [filterGroup, setFilterGroup] = useState('all');
@@ -382,6 +385,28 @@ export default function Timetable() {
     delete copy.makeupId;
     await db.sessions.add(copy);
   }, [numDays, instType]);
+
+  // Add a brand-new session from scratch (course/teacher/room/day/slot).
+  const openAddSession = () => {
+    setAddForm({ groupId: filterGroup !== 'all' ? filterGroup : (groups[0]?.id || ''), courseId: '', lecId: '', roomId: '', day: 0, slotLabel: '' });
+    setAddOpen(true);
+  };
+  const handleAddSession = async () => {
+    const { groupId, courseId, lecId, roomId, day, slotLabel } = addForm;
+    if (!groupId || !courseId || !roomId || slotLabel === '') return;
+    const group = groupMap[groupId];
+    const slotIdx = fullSlots.findIndex(s => s.label === slotLabel);
+    if (slotIdx === -1) return;
+    const mode = TIME_SLOTS.evening.some(s => s.label === slotLabel) ? 'evening' : 'day';
+    await db.sessions.add({
+      id: `manual_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      courseId, lecId: lecId || null, roomId,
+      day: Number(day), slot: slotIdx,
+      groups: [groupId], groupSize: group?.count || 30,
+      mode, durationSlots: 1, locked: true,
+    });
+    setAddOpen(false);
+  };
 
   // Mark a session as missed. withMakeup=true adds it to the rattrapage backlog
   // (carried into a later week's generation); false just records the absence.
@@ -861,6 +886,12 @@ export default function Timetable() {
               </button>
             </>
           )}
+          {!isViewingHistory && (
+            <button onClick={openAddSession}
+              className="ml-auto px-3 py-1 rounded-full text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5" /> {t('ttAddSession')}
+            </button>
+          )}
         </div>
       )}
 
@@ -1114,6 +1145,69 @@ export default function Timetable() {
           </div>
         </div>
       )}
+
+      {/* ── Add session from scratch ── */}
+      <AnimatePresence>
+        {addOpen && (() => {
+          const g = groupMap[addForm.groupId];
+          const groupCourses = g ? coursesForGroup(g, courses) : [];
+          const selCourse = courseMap[addForm.courseId];
+          const courseLecs = (selCourse && g) ? lecturersForCourse(selCourse, g, lecturers) : lecturers;
+          const isEveGroup = g?.mode === 'evening';
+          const slotOpts = displaySlots.filter(s => isEveSlotLabel(s.label) === isEveGroup);
+          const roomOpts = rooms.filter(r => isEveGroup ? r.eve : true);
+          const canSave = addForm.groupId && addForm.courseId && addForm.roomId && addForm.slotLabel;
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+              onClick={e => e.target === e.currentTarget && setAddOpen(false)}>
+              <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
+                className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold text-foreground">{t('ttAddSession')}</h3>
+                  <button onClick={() => setAddOpen(false)} className="p-1 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/50"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="space-y-3">
+                  <Sel label={t('ttAddGroup')} value={addForm.groupId} onChange={v => setAddForm(f => ({ ...f, groupId: v, courseId: '', lecId: '' }))}
+                    options={groups.map(x => ({ v: x.id, l: x.name }))} placeholder={t('ttAddPick')} />
+                  <Sel label={t('ttAddCourse')} value={addForm.courseId} onChange={v => setAddForm(f => ({ ...f, courseId: v, lecId: '' }))}
+                    options={groupCourses.map(c => ({ v: c.id, l: `${c.code} · ${getCourseName(c, lang)}` }))} placeholder={t('ttAddPick')} disabled={!addForm.groupId} />
+                  <Sel label={t('ttAddTeacher')} value={addForm.lecId} onChange={v => setAddForm(f => ({ ...f, lecId: v }))}
+                    options={courseLecs.map(l => ({ v: l.id, l: l.name }))} placeholder="—" />
+                  <Sel label={t('ttAddRoom')} value={addForm.roomId} onChange={v => setAddForm(f => ({ ...f, roomId: v }))}
+                    options={roomOpts.map(r => ({ v: r.id, l: `${r.name} (${r.cap})` }))} placeholder={t('ttAddPick')} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Sel label={t('ttAddDay')} value={String(addForm.day)} onChange={v => setAddForm(f => ({ ...f, day: Number(v) }))}
+                      options={DAYS_LABEL.map((d, i) => ({ v: String(i), l: d }))} />
+                    <Sel label={t('ttAddSlot')} value={addForm.slotLabel} onChange={v => setAddForm(f => ({ ...f, slotLabel: v }))}
+                      options={slotOpts.map(s => ({ v: s.label, l: s.label }))} placeholder={t('ttAddPick')} />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={() => setAddOpen(false)} className="flex-1 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50">{t('cCancel')}</button>
+                  <button onClick={handleAddSession} disabled={!canSave}
+                    className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {t('cAdd')}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function Sel({ label, value, onChange, options, placeholder, disabled }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">{label}</label>
+      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+        className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50">
+        {placeholder !== undefined && <option value="">{placeholder}</option>}
+        {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+      </select>
     </div>
   );
 }
