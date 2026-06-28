@@ -391,6 +391,11 @@ export default function Timetable() {
     setAddForm({ groupId: filterGroup !== 'all' ? filterGroup : (groups[0]?.id || ''), courseId: '', lecId: '', roomId: '', day: 0, slotLabel: '' });
     setAddOpen(true);
   };
+  // Add directly into a grid cell — pre-fills that day + time slot (and the class, if filtered).
+  const openAddForCell = (dayIdx, slotDef) => {
+    setAddForm({ groupId: filterGroup !== 'all' ? filterGroup : (groups[0]?.id || ''), courseId: '', lecId: '', roomId: '', day: dayIdx, slotLabel: slotDef.label });
+    setAddOpen(true);
+  };
   const handleAddSession = async () => {
     const { groupId, courseId, lecId, roomId, day, slotLabel } = addForm;
     if (!groupId || !courseId || !roomId || slotLabel === '') return;
@@ -1134,6 +1139,12 @@ export default function Timetable() {
                                 </div>
                               );
                             })}
+                            {cellSessions.length === 0 && !isViewingHistory && (
+                              <button onClick={() => openAddForCell(di, slotDef)} title={t('ttAddHere')}
+                                className="group/add w-full min-h-[56px] flex items-center justify-center rounded-lg text-muted-foreground/30 hover:text-primary hover:bg-primary/5 transition-colors">
+                                <Plus className="w-4 h-4 opacity-0 group-hover/add:opacity-100 transition-opacity" />
+                              </button>
+                            )}
                           </td>
                         );
                       })}
