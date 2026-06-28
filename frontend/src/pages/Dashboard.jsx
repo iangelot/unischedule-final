@@ -11,6 +11,8 @@ import { db } from '../db';
 import { useLang } from '../hooks/useLang';
 import { badgeSuccess, badgeNeutral, panelInfo } from '../lib/uiBadges';
 import { computeStats } from '../lib/stats';
+import { computeQuality } from '../lib/quality';
+import { generateTimetable } from '../scheduler';
 import { getCourseName } from '../lib/courseUtils';
 import { getWeekDayCount, getWeekDayLabels } from '../lib/weekConfig';
 
@@ -41,6 +43,29 @@ export default function Dashboard() {
     currentWeek: settingsMap.currentWeek || '1', totalWeeks: settingsMap.totalWeeks || '35',
     institutionType: instType, numDays,
   }), [courses, lecturers, rooms, groups, sessions, settingsMap, instType, numDays]);
+  const quality = React.useMemo(() => computeQuality(sessions, { lecturers, rooms, groups }), [sessions, lecturers, rooms, groups]);
+
+  // ── What-if simulator: re-run generation on modified resources, in memory only ──
+  const [sim, setSim] = React.useState({ addTeachers: 0, removeRoomId: '' });
+  const [simResult, setSimResult] = React.useState(null);
+  const [simRunning, setSimRunning] = React.useState(false);
+  const runSim = async () => {
+    setSimRunning(true); setSimResult(null);
+    await new Promise(r => setTimeout(r, 60)); // let the "running" state paint
+    try {
+      const simLecturers = [...lecturers];
+      for (let i = 0; i < sim.addTeachers; i++) {
+        simLecturers.push({ id: `sim_lec_${i}`, name: `Sim ${i + 1}`, type: 'permanent', day: true, eve: true, maxHours: 18, speciality: null });
+      }
+      const simRooms = sim.removeRoomId ? rooms.filter(r => r.id !== sim.removeRoomId) : rooms;
+      const result = generateTimetable(courses, simLecturers, simRooms, groups, instType, numDays, {
+        currentWeek: settingsMap.currentWeek || '1', totalWeeks: settingsMap.totalWeeks || '35',
+      });
+      setSimResult(computeQuality(result, { lecturers: simLecturers, rooms: simRooms, groups }));
+    } finally {
+      setSimRunning(false);
+    }
+  };
   const dayLabels = getWeekDayLabels(numDays, lang, true);
   const conflictCount = React.useMemo(() => {
     let count = 0;
@@ -214,6 +239,79 @@ export default function Dashboard() {
               <DayChart data={stats.byDay} labels={dayLabels} />
             </StatPanel>
           </div>
+
+          {/* Quality score + Fairness */}
+          {quality && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <StatPanel title={t('dashQuality')} hint={t('dashQualityScore')}>
+                <div className="flex items-center gap-5">
+                  <div className="shrink-0 w-24 h-24 rounded-full flex items-center justify-center"
+                    style={{ background: `conic-gradient(${quality.score >= 85 ? '#10b981' : quality.score >= 60 ? '#f59e0b' : '#ef4444'} ${quality.score * 3.6}deg, #e2e8f0 0deg)` }}>
+                    <div className="w-[78px] h-[78px] rounded-full bg-card flex flex-col items-center justify-center">
+                      <span className="text-2xl font-bold text-foreground leading-none">{quality.score}</span>
+                      <span className="text-[9px] text-muted-foreground">/100</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    {quality.breakdown.filter(b => b.show).map(b => (
+                      <BarRow key={b.key} label={t(b.key)} right={`${b.pct}%`} pct={b.pct} danger={b.pct < 60} />
+                    ))}
+                  </div>
+                </div>
+              </StatPanel>
+
+              <StatPanel title={t('dashFairness')}>
+                <div className="space-y-3">
+                  <BarRow label={t('dashBalance')} right={`${quality.fairness.balance}%`} pct={quality.fairness.balance} danger={quality.fairness.balance < 50} />
+                  {quality.fairness.busiest && (
+                    <div className="flex items-center justify-between text-sm px-3 py-2 bg-muted/40 rounded-lg">
+                      <span className="text-muted-foreground">{t('dashBusiest')}</span>
+                      <span className="font-medium text-foreground">{quality.fairness.busiest.name} · {quality.fairness.busiest.hours}h</span>
+                    </div>
+                  )}
+                  {quality.fairness.lightest && quality.fairness.lightest !== quality.fairness.busiest && (
+                    <div className="flex items-center justify-between text-sm px-3 py-2 bg-muted/40 rounded-lg">
+                      <span className="text-muted-foreground">{t('dashLightest')}</span>
+                      <span className="font-medium text-foreground">{quality.fairness.lightest.name} · {quality.fairness.lightest.hours}h</span>
+                    </div>
+                  )}
+                  {quality.fairness.worstClass && (
+                    <div className="flex items-center justify-between text-sm px-3 py-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg">
+                      <span className="text-amber-700">{t('dashWorstClass')}</span>
+                      <span className="font-medium text-amber-700">{quality.fairness.worstClass.name} · {t('dashGapsN', quality.fairness.worstClass.gaps)}</span>
+                    </div>
+                  )}
+                </div>
+              </StatPanel>
+            </div>
+          )}
+
+          {/* What-if simulator */}
+          {quality && (
+            <StatPanel title={t('dashWhatIf')} hint={t('dashWhatIfHint')}>
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <button onClick={() => setSim(s => ({ ...s, addTeachers: s.addTeachers + 1 }))}
+                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted/50">
+                  {t('dashSimAddTeacher')}{sim.addTeachers > 0 ? ` ×${sim.addTeachers}` : ''}
+                </button>
+                <select value={sim.removeRoomId} onChange={e => setSim(s => ({ ...s, removeRoomId: e.target.value }))}
+                  className="px-3 py-1.5 rounded-lg border border-border bg-background text-xs">
+                  <option value="">{t('dashSimRemoveRoom')}…</option>
+                  {rooms.map(r => <option key={r.id} value={r.id}>− {r.name}</option>)}
+                </select>
+                <button onClick={() => { setSim({ addTeachers: 0, removeRoomId: '' }); setSimResult(null); }}
+                  className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted/50">{t('dashSimReset')}</button>
+                <button onClick={runSim} disabled={simRunning || (sim.addTeachers === 0 && !sim.removeRoomId)}
+                  className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-50">
+                  {simRunning ? t('dashSimRunning') : t('dashSimRun')}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <SimCard label={t('dashSimCurrent')} score={quality.score} clashes={quality.clashes} overloaded={quality.overloaded} t={t} />
+                <SimCard label={t('dashSimProjected')} score={simResult?.score} clashes={simResult?.clashes} overloaded={simResult?.overloaded} pending={simRunning} empty={!simResult && !simRunning} t={t} />
+              </div>
+            </StatPanel>
+          )}
         </motion.div>
       )}
 
@@ -330,6 +428,30 @@ function DayChart({ data, labels }) {
           <span className="text-[10px] text-muted-foreground">{labels[i]}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SimCard({ label, score, clashes, overloaded, pending, empty, t }) {
+  const color = score == null ? 'text-muted-foreground' : score >= 85 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-red-600';
+  return (
+    <div className="border border-border rounded-xl p-4 text-center">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</p>
+      {pending ? (
+        <p className="text-3xl font-bold text-muted-foreground animate-pulse">…</p>
+      ) : empty ? (
+        <p className="text-sm text-muted-foreground py-2">—</p>
+      ) : (
+        <>
+          <p className={`text-3xl font-bold ${color}`}>{score}<span className="text-sm text-muted-foreground">/100</span></p>
+          <p className={`text-xs mt-1 ${clashes > 0 ? 'text-red-600 font-semibold' : 'text-emerald-600'}`}>
+            {clashes > 0 ? t('dashSimClashesN', clashes) : t('dashNoConflicts')}
+          </p>
+          <p className={`text-xs mt-0.5 ${overloaded > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+            {overloaded} {t('dashOverloaded').toLowerCase()}
+          </p>
+        </>
+      )}
     </div>
   );
 }

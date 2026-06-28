@@ -201,6 +201,16 @@ function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDay
 
 function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSlotIndices, schedulableDays = [0, 1, 2, 3, 4], currentWeek = '1', totalWeeks = '35', makeups = [], allSlotDefs = [], lecUnavail = new Map()) {
   const sessions = [];
+  // Track running load to spread teaching across qualified lecturers instead of
+  // dumping it on whoever is picked first — pick randomly among the 2 least-loaded.
+  const lecLoad = {};
+  const pickBalancedLec = (lecs, durSlots) => {
+    if (!lecs.length) return null;
+    const sorted = [...lecs].sort((a, b) => (lecLoad[a.id] || 0) - (lecLoad[b.id] || 0));
+    const lec = sorted[Math.floor(Math.random() * Math.min(2, sorted.length))];
+    lecLoad[lec.id] = (lecLoad[lec.id] || 0) + durSlots;
+    return lec;
+  };
   const pickRoom = (availRooms, size, roomType) => {
     let pool = availRooms.filter(r => r.cap >= size);
     if (roomType) {
@@ -261,12 +271,12 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
       const weekSlots = semesterSessionsForWeek(course, currentWeek, totalWeeks);
 
       weekSlots.forEach((meta) => {
-        const lec  = courseLecs[Math.floor(Math.random() * courseLecs.length)];
+        const dur  = meta.durationSlots || 1;
+        const lec  = pickBalancedLec(courseLecs, dur); // spread load across qualified teachers
         // Randomize among rooms that fit the group AND match the required room
         // type (e.g. a lab course → a lab), exploring instead of always Amphi 500.
         const room = pickRoom(availRooms, groupSize, course.roomType);
         const day  = randDayFor(lec?.id);
-        const dur  = meta.durationSlots || 1;
         const slot = pickStart(dur, availSlots, allSlotDefs); // valid contiguous start for blocks
 
         sessions.push({
