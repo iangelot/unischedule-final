@@ -9,7 +9,7 @@ import {
 import { db, getSetting, TIME_SLOTS } from '../db';
 import { specialityLabel } from '../lib/cameroonSpecialities';
 import { coursesForGroup, lecturersForCourse, getCourseName } from '../lib/courseUtils';
-import { generateTimetable } from '../scheduler';
+import { generateTimetable, repairTimetable } from '../scheduler';
 import { diagnoseFeasibility } from '../lib/diagnostics';
 import { exportTimetablePDF } from '../lib/exportPDF';
 import { useAppStore } from '../store/useAppStore';
@@ -396,7 +396,7 @@ export default function Timetable() {
     setAddForm({ groupId: filterGroup !== 'all' ? filterGroup : (groups[0]?.id || ''), courseId: '', lecId: '', roomId: '', day: dayIdx, slotLabel: slotDef.label });
     setAddOpen(true);
   };
-  const handleAddSession = async () => {
+  const handleAddSession = useCallback(async () => {
     const { groupId, courseId, lecId, roomId, day, slotLabel } = addForm;
     if (!groupId || !courseId || !roomId || slotLabel === '') return;
     const group = groupMap[groupId];
@@ -411,6 +411,38 @@ export default function Timetable() {
       mode, durationSlots: 1, locked: true,
     });
     setAddOpen(false);
+  }, [addForm, groupMap, fullSlots]);
+
+  // Count hard clashes in the LIVE week (group / lecturer / room double-booked),
+  // expanding each block across every slot it occupies. The grid badge used to
+  // be hardcoded "no conflicts" — this makes it tell the truth after manual edits.
+  const liveConflicts = React.useMemo(() => {
+    const occ = (s) => Array.from({ length: s.durationSlots || 1 }, (_, k) => s.slot + k);
+    const g = {}, l = {}, r = {}; let c = 0;
+    for (const s of liveSessions) {
+      for (const slot of occ(s)) {
+        for (const grp of s.groups || []) { const k = `${grp}-${s.day}-${slot}`; if (g[k]) c++; g[k] = 1; }
+        if (s.lecId)  { const k = `${s.lecId}-${s.day}-${slot}`;  if (l[k]) c++; l[k] = 1; }
+        if (s.roomId) { const k = `${s.roomId}-${s.day}-${slot}`; if (r[k]) c++; r[k] = 1; }
+      }
+    }
+    return c;
+  }, [liveSessions]);
+
+  const [autoFixing, setAutoFixing] = useState(false);
+  const handleAutoFix = async () => {
+    setAutoFixing(true);
+    try {
+      const fixed = repairTimetable(liveSessions, {
+        lecturers, rooms, institutionType: instType, numDays, holidayDays,
+      });
+      await db.transaction('rw', db.sessions, async () => {
+        await db.sessions.clear();
+        await db.sessions.bulkAdd(fixed);
+      });
+    } finally {
+      setAutoFixing(false);
+    }
   };
 
   // Mark a session as missed. withMakeup=true adds it to the rattrapage backlog
@@ -954,11 +986,25 @@ export default function Timetable() {
               })()}
               {dragSession && <span className="text-xs text-accent-500 font-medium">{t('ttDragHint')}</span>}
             </div>
-            <div className="flex items-center gap-1">
-              <CheckCircle2 className="w-4 h-4 text-slate-700" />
-              <span className="text-xs text-muted-foreground">{t('ttNoConflicts')}</span>
-              <span className="text-xs text-muted-foreground ml-2">• {t('ttDragHint')}</span>
-            </div>
+            {liveConflicts === 0 ? (
+              <div className="flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs text-muted-foreground">{t('ttNoConflicts')}</span>
+                <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">• {t('ttDragHint')}</span>
+              </div>
+            ) : !isViewingHistory && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 text-xs font-semibold text-red-600">
+                  <AlertCircle className="w-4 h-4" /> {t('ttConflictsN', liveConflicts)}
+                </span>
+                <button onClick={handleAutoFix} disabled={autoFixing}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-60">
+                  {autoFixing
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('ttAutoFixing')}</>
+                    : <><RefreshCw className="w-3.5 h-3.5" /> {t('ttAutoFix')}</>}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className={`px-4 py-2 text-xs border-b border-border print:hidden ${panelInfo}`}>

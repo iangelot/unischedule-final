@@ -109,6 +109,30 @@ export function generateTimetable(courses, lecturers, rooms, groups, institution
   return repairSchedule(bestSchedule.sessions, daySlotIndices, eveSlotIndices, schedulableDays, rooms, allSlotDefs, lecUnavail);
 }
 
+/**
+ * Public: run ONLY the deterministic repair pass on an existing timetable —
+ * used to auto-resolve conflicts introduced by manual edits (drag / add).
+ * Locked sessions (what the user manually placed) are kept; everything else is
+ * relocated to a clash-free slot. Returns a new array; inputs are not mutated.
+ */
+export function repairTimetable(sessions, { lecturers = [], rooms = [], institutionType = 'university', numDays = 5, holidayDays = [] } = {}) {
+  if (!sessions || !sessions.length) return sessions || [];
+  const holidaySet = new Set(holidayDays);
+  const allDays = Array.from({ length: numDays }, (_, i) => i);
+  const allowed = allDays.filter(d => !holidaySet.has(d));
+  const schedulableDays = allowed.length ? allowed : allDays;
+  const daySlots = institutionType === 'secondary'
+    ? TIME_SLOTS.secondary.filter(s => !s.isBreak)
+    : TIME_SLOTS.university.filter(s => !s.isBreak);
+  const eveSlots = institutionType === 'secondary' ? [] : TIME_SLOTS.evening;
+  const daySlotIndices = daySlots.map((_, i) => i);
+  const eveSlotIndices = eveSlots.map((_, i) => daySlots.length + i);
+  const allSlotDefs = [...daySlots, ...eveSlots];
+  const lecUnavail = new Map(lecturers.map(l => [l.id, new Set(l.unavailableDays || [])]));
+  const copy = sessions.map(s => ({ ...s }));
+  return repairSchedule(copy, daySlotIndices, eveSlotIndices, schedulableDays, rooms, allSlotDefs, lecUnavail);
+}
+
 function repairSchedule(sessions, daySlotIndices, eveSlotIndices, schedulableDays, rooms, allSlotDefs = [], lecUnavail = new Map()) {
   const key = (a, b, c) => `${a}-${b}-${c}`;
   const unavailable = (lecId, day) => lecId && lecUnavail.get(lecId)?.has(day);
