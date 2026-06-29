@@ -2,12 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, RefreshCw, BookOpen, MapPin, Calendar } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RefreshCw, BookOpen, MapPin, Calendar, Wand2 } from 'lucide-react';
 import { db, TIME_SLOTS } from '../db';
 import { getCourseName } from '../lib/courseUtils';
 import { formatSessionLabel } from '../lib/sessionNumbers';
-import { getWeekDayLabels } from '../lib/weekConfig';
+import { getWeekDayCount, getWeekDayLabels } from '../lib/weekConfig';
+import { repairTimetable } from '../scheduler';
 import { useLang } from '../hooks/useLang';
+
+const toISODate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function mondayOf(date) {
+  const d = new Date(date);
+  const diff = (d.getDay() + 6) % 7;   // 0 = Monday
+  d.setDate(d.getDate() - diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 const DAY_SLOTS_UNI = [...TIME_SLOTS.university, ...TIME_SLOTS.evening].filter(s => !s.isBreak);
 
@@ -69,12 +79,39 @@ export default function Conflicts() {
   const navigate = useNavigate();
   const { lang, t } = useLang();
   const [isChecking, setIsChecking] = useState(false);
+  const [autoFixing, setAutoFixing] = useState(false);
   const [conflicts, setConflicts]   = useState(null);
 
   const sessions  = useLiveQuery(() => db.sessions.toArray());
   const courses   = useLiveQuery(() => db.courses.toArray()) || [];
   const lecturers = useLiveQuery(() => db.lecturers.toArray()) || [];
   const rooms     = useLiveQuery(() => db.rooms.toArray()) || [];
+  const holidays  = useLiveQuery(() => db.holidays.toArray()) || [];
+
+  // Settings needed to repair correctly (shift count + holiday days to avoid).
+  const [settings, setSettings] = useState({ institutionType: 'university', weekStart: null });
+  useEffect(() => {
+    db.settings.toArray().then(rows => {
+      const s = {}; rows.forEach(r => { s[r.key] = r.value; });
+      setSettings(prev => ({ ...prev, ...s }));
+    });
+  }, []);
+
+  const instType = settings.institutionType || 'university';
+  const numDays  = getWeekDayCount(instType, settings);
+
+  // Day indices (0 = Monday) of the current week that fall on a public holiday —
+  // the repair must not relocate sessions onto them.
+  const holidayDays = useMemo(() => {
+    const monday = settings.weekStart ? new Date(settings.weekStart) : mondayOf(new Date());
+    const set = new Set(holidays.map(h => h.date));
+    const out = [];
+    for (let i = 0; i < numDays; i++) {
+      const d = new Date(monday); d.setDate(monday.getDate() + i);
+      if (set.has(toISODate(d))) out.push(i);
+    }
+    return out;
+  }, [holidays, settings.weekStart, numDays]);
 
   const courseMap   = useMemo(() => Object.fromEntries(courses.map(c => [c.id, c])), [courses]);
   const lecturerMap = useMemo(() => Object.fromEntries(lecturers.map(l => [l.id, l])), [lecturers]);
@@ -92,6 +129,25 @@ export default function Conflicts() {
     await new Promise(r => setTimeout(r, 400));
     setConflicts(detectLocalConflicts(sessions || []));
     setIsChecking(false);
+  };
+
+  // One-click repair: relocate every non-locked session to a clash-free slot,
+  // keeping the user's locked placements. Mirrors the Timetable auto-fix so the
+  // two pages stay consistent. liveQuery refresh re-runs the conflict check.
+  const handleAutoFix = async () => {
+    if (!sessions || !sessions.length) return;
+    setAutoFixing(true);
+    try {
+      const fixed = repairTimetable(sessions, {
+        lecturers, rooms, institutionType: instType, numDays, holidayDays,
+      });
+      await db.transaction('rw', db.sessions, async () => {
+        await db.sessions.clear();
+        await db.sessions.bulkAdd(fixed);
+      });
+    } finally {
+      setAutoFixing(false);
+    }
   };
 
   const describeSession = (s) => {
@@ -211,10 +267,17 @@ export default function Conflicts() {
                 );
               })}
             </div>
-            <div className="px-6 py-4 border-t border-border">
+            <div className="px-6 py-4 border-t border-border flex flex-wrap items-center justify-between gap-3">
               <button onClick={() => navigate('/timetable')}
                 className="text-sm text-primary font-semibold hover:underline">
                 {lang === 'fr' ? 'Aller à l\'emploi du temps pour corriger →' : 'Go to timetable to fix →'}
+              </button>
+              <button onClick={handleAutoFix} disabled={autoFixing}
+                className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-60">
+                {autoFixing
+                  ? <RefreshCw className="w-4 h-4 animate-spin" />
+                  : <Wand2 className="w-4 h-4" />}
+                {autoFixing ? t('ttAutoFixing') : t('ttAutoFix')}
               </button>
             </div>
           </div>

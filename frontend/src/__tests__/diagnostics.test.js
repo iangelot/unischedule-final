@@ -31,6 +31,31 @@ describe('diagnoseFeasibility', () => {
     expect(issues.some(d => d.message === 'diagGroupOverflow' && d.severity === 'error')).toBe(true);
   });
 
+  it('flags total teaching demand exceeding total teacher capacity', () => {
+    // 1 group, 3 courses (≈6 h/week of demand) but a single lecturer capped at
+    // 2 h — aggregate capacity is short regardless of slots or rooms.
+    const groups = [{ id: 'g1', name: 'G1', mode: 'day', count: 30, speciality: null, year: 1 }];
+    const courses = Array.from({ length: 3 }, (_, i) => ({
+      id: `c${i}`, code: `C${i}`, hoursPerWeek: 2, shareable: true, speciality: null,
+    }));
+    const lecturers = [{ id: 'l1', day: true, eve: true, speciality: null, maxHours: 2 }];
+    const issues = diagnoseFeasibility({
+      courses, lecturers, rooms: baseRooms, groups,
+      institutionType: 'university', numDays: 5, currentWeek: '1', totalWeeks: '35',
+    }, t);
+    expect(issues.some(d => d.message === 'diagCapacity' && d.severity === 'warning')).toBe(true);
+  });
+
+  it('does not flag capacity when teachers comfortably cover demand', () => {
+    const groups = [{ id: 'g1', name: 'G1', mode: 'day', count: 30, speciality: null, year: 1 }];
+    const courses = [{ id: 'c1', code: 'C1', hoursPerWeek: 2, shareable: true, speciality: null }];
+    const issues = diagnoseFeasibility({
+      courses, lecturers: baseLecturers, rooms: baseRooms, groups,
+      institutionType: 'university', numDays: 5, currentWeek: '1', totalWeeks: '35',
+    }, t);
+    expect(issues.some(d => d.message === 'diagCapacity')).toBe(false);
+  });
+
   it('flags a group larger than the biggest room', () => {
     const groups = [{ id: 'g1', name: 'Big', mode: 'day', count: 500, speciality: null, year: 1 }];
     const courses = [{ id: 'c1', code: 'C1', hoursPerWeek: 2, shareable: true, speciality: null }];

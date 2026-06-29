@@ -78,5 +78,17 @@ export function diagnoseFeasibility({ courses, lecturers, rooms, groups, institu
     }
   });
 
+  // 5. Aggregate capacity: total teaching hours vs total teacher hours.
+  //    Independent of slot/room limits — answers "do I have enough staff at all?"
+  const SLOT_HOURS = 2;
+  const demandHours = (dayDemand + eveDemand) * SLOT_HOURS;
+  const capacityHours = lecturers.reduce((sum, l) => sum + (Number(l.maxHours) || 0), 0);
+  if (capacityHours > 0 && demandHours > capacityHours) {
+    // Size the gap in whole teachers, using the average contract as the unit.
+    const avgMax = capacityHours / lecturers.length || 18;
+    const moreTeachers = Math.max(1, Math.ceil((demandHours - capacityHours) / avgMax));
+    issues.push({ severity: 'warning', message: t('diagCapacity', demandHours, capacityHours, moreTeachers) });
+  }
+
   return issues;
 }
