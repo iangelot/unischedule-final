@@ -4,11 +4,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Plus, Search, BookOpen, Edit2, Trash2, X, Share2 } from 'lucide-react';
 import { db, performOfflineAction, CAMEROON_SPECIALITIES } from '../db';
 import { specialityLabel } from '../lib/cameroonSpecialities';
-import { normalizeCourse, prepareCourseForSave, courseToForm, getCourseName } from '../lib/courseUtils';
+import { normalizeCourse, prepareCourseForSave, courseToForm, getCourseName, hoursToSessions, sessionHoursForCourse } from '../lib/courseUtils';
 import { useLang } from '../hooks/useLang';
 
 const SPECIALITIES = Object.keys(CAMEROON_SPECIALITIES);
-const EMPTY_FORM = { code: '', name_en: '', name_fr: '', credits: 3, hoursPerWeek: 3, totalSessions: '', block: false, roomType: '', shareable: false, speciality: '' };
+const EMPTY_FORM = { code: '', name_en: '', name_fr: '', credits: 3, hoursPerWeek: 3, totalHours: '', block: false, roomType: '', shareable: false, speciality: '' };
 const ROOM_TYPE_OPTS = [
   { id: '', key: 'crsAnyRoom' },
   { id: 'classroom', key: 'rmClassroom' },
@@ -117,7 +117,9 @@ export default function Courses() {
                     <td className="px-6 py-4 text-muted-foreground">{n.credits}</td>
                     <td className="px-6 py-4 text-muted-foreground">{n.hoursPerWeek}{t('crsHoursUnit')}</td>
                     <td className="px-6 py-4 text-muted-foreground text-xs">
-                      {n.totalSessions ? `${n.totalSessions} ${t('crsPerSem')}` : t('crsAuto')}
+                      {n.totalHours
+                        ? `${n.totalHours} h · ${n.totalSessions} ${t('crsPerSem')}`
+                        : (n.totalSessions ? `${n.totalSessions} ${t('crsPerSem')}` : t('crsAuto'))}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -175,10 +177,12 @@ export default function Courses() {
                     <p className="text-[10px] text-muted-foreground mt-1">{t('crsHoursHint')}</p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsSessionsSem')}</label>
-                    <input type="number" min="1" max="200" value={form.totalSessions} onChange={e => setForm(f => ({...f, totalSessions: e.target.value}))}
-                      placeholder={t('crsSessionsPh')} className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                    <p className="text-[10px] text-muted-foreground mt-1">{t('crsSessionsHint')}</p>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('crsTotalHours')}</label>
+                    <input type="number" min="1" max="400" value={form.totalHours} onChange={e => setForm(f => ({...f, totalHours: e.target.value}))}
+                      placeholder={t('crsTotalHoursPh')} className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    {form.totalHours
+                      ? <p className="text-[10px] text-emerald-600 mt-1">{t('crsHoursToSessions', hoursToSessions(form.totalHours, form), sessionHoursForCourse(form))}</p>
+                      : <p className="text-[10px] text-muted-foreground mt-1">{t('crsTotalHoursHint')}</p>}
                   </div>
                 </div>
                 <label className="flex items-center gap-3 cursor-pointer">
