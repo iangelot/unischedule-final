@@ -76,6 +76,7 @@ export default function Timetable() {
   const [addForm, setAddForm]       = useState({ groupId: '', courseId: '', lecId: '', roomId: '', day: 0, slotLabel: '' });
   const [status, setStatus]         = useState('idle');
   const [genLog, setGenLog]         = useState([]);
+  const [genScope, setGenScope]     = useState('all');   // 'all' | 'level:N' | 'group:ID'
   const [filterGroup, setFilterGroup] = useState('all');
   const didDefaultGroupRef = useRef(false);
   const [filterMode, setFilterMode] = useState('all'); // all | day | evening
@@ -189,7 +190,26 @@ export default function Timetable() {
       setGenLog([`⚠ ${t('ttGenerateDisabled')}`]);
       return;
     }
-    if (liveSessions.length > 0 && !window.confirm(t('ttConfirmRegen'))) return;
+    // Resolve generation scope: all levels (default), one level (year), or one class.
+    const scoped = genScope !== 'all';
+    let targetGroups = groups;
+    let scopeLabel = '';
+    if (genScope.startsWith('level:')) {
+      const yr = Number(genScope.slice(6));
+      targetGroups = groups.filter(g => Number(g.year) === yr);
+      scopeLabel = `${t('ttScopeLevel', yr)}`;
+    } else if (genScope.startsWith('group:')) {
+      const gid = genScope.slice(6);
+      targetGroups = groups.filter(g => g.id === gid);
+      scopeLabel = groupMap[gid]?.name || '';
+    }
+    if (scoped && targetGroups.length === 0) {
+      setStatus('error');
+      setGenLog([`⚠ ${t('ttScopeEmpty')}`]);
+      return;
+    }
+
+    if (liveSessions.length > 0 && !window.confirm(scoped ? t('ttConfirmRegenScoped', scopeLabel) : t('ttConfirmRegen'))) return;
 
     setStatus('running');
     setSearchParams({});
@@ -215,7 +235,7 @@ export default function Timetable() {
 
     // Makeup ("rattrapage") backlog owed to this week's groups.
     const weekNum = Number(settings.currentWeek) || 1;
-    const groupIds = new Set(groups.map(g => g.id));
+    const groupIds = new Set(targetGroups.map(g => g.id));
     const allMakeups = await db.makeups.toArray();
     const pendingMakeups = allMakeups.filter(m =>
       groupIds.has(m.groupId) &&
@@ -230,7 +250,7 @@ export default function Timetable() {
     try {
       const result = await new Promise(resolve => {
         setTimeout(() => {
-          const r = generateTimetable(courses, lecturers, rooms, groups, instType, numDays, {
+          const r = generateTimetable(courses, lecturers, rooms, targetGroups, instType, numDays, {
             currentWeek: settings.currentWeek || '1',
             totalWeeks: settings.totalWeeks || '35',
             holidayDays,
@@ -246,12 +266,30 @@ export default function Timetable() {
       await new Promise(r => setTimeout(r, 400));
 
       if (result && result.length > 0) {
+        // For a scoped run, keep the OTHER levels exactly as they are and treat
+        // them as fixed occupancy, so the regenerated level is placed clash-free
+        // around them (preserving the global no-double-booking guarantee).
+        let finalSessions = result;
+        if (scoped) {
+          const targetIds = new Set(targetGroups.map(g => g.id));
+          const others = liveSessions.filter(s => !(s.groups || []).some(gid => targetIds.has(gid)));
+          const lockedOthers = others.map(s => ({ ...s, locked: true }));
+          const repaired = repairTimetable([...lockedOthers, ...result], {
+            lecturers, rooms, institutionType: instType, numDays, holidayDays,
+          });
+          // Restore each pre-existing session's original locked flag.
+          const origLocked = new Map(others.map(s => [s.id, !!s.locked]));
+          finalSessions = repaired.map(s => origLocked.has(s.id) ? { ...s, locked: origLocked.get(s.id) } : s);
+          log(`🔒 ${others.length} séance(s) des autres niveaux conservées`);
+          await new Promise(r => setTimeout(r, 300));
+        }
+
         await db.sessions.clear();
-        await db.sessions.bulkAdd(result);
+        await db.sessions.bulkAdd(finalSessions);
 
         // Tie injected makeups to this week so re-generating keeps them but
         // advancing past this week drains them from the backlog.
-        const placedMakeupIds = new Set(result.filter(s => s.isMakeup).map(s => s.makeupId));
+        const placedMakeupIds = new Set(finalSessions.filter(s => s.isMakeup).map(s => s.makeupId));
         for (const m of pendingMakeups) {
           if (placedMakeupIds.has(m.id) && m.status === 'pending') {
             await db.makeups.update(m.id, { status: 'rescheduled', rescheduledWeek: weekNum });
@@ -263,7 +301,7 @@ export default function Timetable() {
         let snapId = null;
         try {
           snapId = await saveTimetableSnapshot({
-            sessions: result,
+            sessions: finalSessions,
             weekMonday,
             settings: { ...settings, _numDays: numDays },
             generatedBy: user?.fullName,
@@ -274,7 +312,7 @@ export default function Timetable() {
           console.error(snapErr);
           log(`⚠ Historique: ${snapErr.message}`);
         }
-        log(`📅 Emploi du temps généré: ${result.length} séances planifiées`);
+        log(`📅 Emploi du temps généré: ${finalSessions.length} séances planifiées`);
         await new Promise(r => setTimeout(r, 300));
         if (snapId) log(`🎉 ${t('ttSavedToHistory')}`);
         setStatus('done');
@@ -808,6 +846,23 @@ export default function Timetable() {
                 <RefreshCw className="w-4 h-4" /> {t('ttClear')}
               </button>
             </>
+          )}
+          {!isViewingHistory && isDataReady && (
+            <select value={genScope} onChange={e => setGenScope(e.target.value)} disabled={status === 'running'}
+              title={t('ttScopeLabel')}
+              className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60">
+              <option value="all">{t('ttScopeAll')}</option>
+              <optgroup label={t('ttScopeByLevel')}>
+                {[...new Set(groups.map(g => Number(g.year)).filter(Boolean))].sort((a, b) => a - b).map(yr => (
+                  <option key={`lvl${yr}`} value={`level:${yr}`}>{t('ttScopeLevel', yr)}</option>
+                ))}
+              </optgroup>
+              <optgroup label={t('ttScopeByClass')}>
+                {groups.map(g => (
+                  <option key={g.id} value={`group:${g.id}`}>{g.name}</option>
+                ))}
+              </optgroup>
+            </select>
           )}
           <button id="run-ai-engine" onClick={handleGenerate} disabled={status === 'running' || !isDataReady || isViewingHistory}
             title={!isDataReady ? t('ttGenerateDisabled') : ''}
