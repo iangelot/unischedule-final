@@ -38,11 +38,14 @@ export default function Dashboard() {
 
   const instType = settingsMap.institutionType || 'university';
   const numDays  = getWeekDayCount(instType, settingsMap);
+  const [statClass, setStatClass] = React.useState('all');   // 'all' or a group id
+  const [statScope, setStatScope] = React.useState('week');  // 'week' | 'semester'
   const stats = React.useMemo(() => computeStats({
     courses, lecturers, rooms, groups, sessions,
     currentWeek: settingsMap.currentWeek || '1', totalWeeks: settingsMap.totalWeeks || '35',
     institutionType: instType, numDays,
-  }), [courses, lecturers, rooms, groups, sessions, settingsMap, instType, numDays]);
+    filterGroupId: statClass === 'all' ? null : statClass, scope: statScope,
+  }), [courses, lecturers, rooms, groups, sessions, settingsMap, instType, numDays, statClass, statScope]);
   const quality = React.useMemo(() => computeQuality(sessions, { lecturers, rooms, groups }), [sessions, lecturers, rooms, groups]);
 
   // ── What-if simulator: re-run generation on modified resources, in memory only ──
@@ -201,7 +204,28 @@ export default function Dashboard() {
       {/* ── Analytics (only once a timetable exists) ── */}
       {hasTimetable && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="space-y-6">
-          <h3 className="text-lg font-bold text-foreground">{t('dashAnalytics')}</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 className="text-lg font-bold text-foreground">{t('dashAnalytics')}</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Class / level filter */}
+              <select value={statClass} onChange={e => setStatClass(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/20">
+                <option value="all">{t('dashAllClasses')}</option>
+                {[...groups].sort((a, b) => (a.year || 0) - (b.year || 0) || a.name.localeCompare(b.name)).map(g => (
+                  <option key={g.id} value={g.id}>{g.name}{g.year ? ` · ${t('cLevel')} ${g.year}` : ''}</option>
+                ))}
+              </select>
+              {/* Time scope */}
+              <div className="flex rounded-lg border border-border overflow-hidden text-xs">
+                {[['week', t('dashScopeWeek')], ['semester', t('dashScopeSemester')]].map(([v, l]) => (
+                  <button key={v} onClick={() => setStatScope(v)}
+                    className={`px-3 py-1.5 font-medium transition-colors ${statScope === v ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard label={t('dashSemesterProgress')} value={`${stats.semesterPct}%`} sub={t('dashWeekOf', stats.currentWeek, stats.totalWeeks)} />

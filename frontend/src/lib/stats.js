@@ -15,10 +15,16 @@ function slotCounts(institutionType) {
   return { day, eve };
 }
 
-export function computeStats({ courses, lecturers, rooms, groups, sessions, currentWeek, totalWeeks, institutionType, numDays }) {
+export function computeStats({ courses, lecturers, rooms, groups, sessions, currentWeek, totalWeeks, institutionType, numDays, filterGroupId = null, scope = 'week' }) {
   const cw = Number(currentWeek) || 1;
   const tw = Number(totalWeeks) || 35;
   const { day: daySlotCount, eve: eveSlotCount } = slotCounts(institutionType);
+
+  // Scope everything to one class when a filter is set.
+  const group = filterGroupId ? groups.find(g => g.id === filterGroupId) : null;
+  const sess = filterGroupId ? sessions.filter(s => (s.groups || []).includes(filterGroupId)) : sessions;
+  // For semester scope, weekly figures are projected across the remaining weeks.
+  const scopeMult = scope === 'semester' ? tw : 1;
 
   // ── Semester progress (week-based) ──
   const semesterPct = Math.min(100, Math.round((cw / tw) * 100));
@@ -26,8 +32,10 @@ export function computeStats({ courses, lecturers, rooms, groups, sessions, curr
   // ── Per-subject coverage: sessions scheduled up to & incl. the current week ──
   const usedCourseIds = new Set();
   groups.forEach(g => coursesForGroup(g, courses).forEach(c => usedCourseIds.add(c.id)));
-  const subjectProgress = courses
-    .filter(c => usedCourseIds.has(c.id))
+  const subjectCourses = group
+    ? coursesForGroup(group, courses)
+    : courses.filter(c => usedCourseIds.has(c.id));
+  const subjectProgress = subjectCourses
     .map(c => {
       const perWeek = sessionsPerWeekForCourse(c);
       const total = totalSemesterSessions(c, tw);
@@ -38,8 +46,9 @@ export function computeStats({ courses, lecturers, rooms, groups, sessions, curr
 
   // ── Teacher weekly load (this week) ──
   const lecSlots = {};
-  sessions.forEach(s => { if (s.lecId) lecSlots[s.lecId] = (lecSlots[s.lecId] || 0) + (s.durationSlots || 1); });
+  sess.forEach(s => { if (s.lecId) lecSlots[s.lecId] = (lecSlots[s.lecId] || 0) + (s.durationSlots || 1); });
   const teacherLoad = lecturers
+    .filter(l => !filterGroupId || (lecSlots[l.id] || 0) > 0)   // only this class's teachers when filtered
     .map(l => {
       const hours = (lecSlots[l.id] || 0) * SLOT_HOURS;
       const max = Number(l.maxHours) || 0;
@@ -49,7 +58,7 @@ export function computeStats({ courses, lecturers, rooms, groups, sessions, curr
 
   // ── Room utilization (this week) ──
   const roomSlotsUsed = {};
-  sessions.forEach(s => { if (s.roomId) roomSlotsUsed[s.roomId] = (roomSlotsUsed[s.roomId] || 0) + (s.durationSlots || 1); });
+  sess.forEach(s => { if (s.roomId) roomSlotsUsed[s.roomId] = (roomSlotsUsed[s.roomId] || 0) + (s.durationSlots || 1); });
   const roomUtil = rooms
     .map(r => {
       const cap = (daySlotCount + (r.eve ? eveSlotCount : 0)) * numDays;
@@ -60,9 +69,9 @@ export function computeStats({ courses, lecturers, rooms, groups, sessions, curr
 
   // ── Sessions per day (this week) ──
   const byDay = Array.from({ length: numDays }, () => 0);
-  sessions.forEach(s => { if (s.day >= 0 && s.day < numDays) byDay[s.day] += 1; });
+  sess.forEach(s => { if (s.day >= 0 && s.day < numDays) byDay[s.day] += 1; });
 
-  const totalHours = sessions.reduce((sum, s) => sum + (s.durationSlots || 1) * SLOT_HOURS, 0);
+  const totalHours = sess.reduce((sum, s) => sum + (s.durationSlots || 1) * SLOT_HOURS, 0) * scopeMult;
   const avgRoomUtil = roomUtil.length ? Math.round(roomUtil.reduce((a, r) => a + r.pct, 0) / roomUtil.length) : 0;
   const overloadedTeachers = teacherLoad.filter(t => t.over).length;
 
