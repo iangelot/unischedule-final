@@ -228,10 +228,25 @@ function randomSchedule(courses, lecturers, rooms, groups, daySlotIndices, eveSl
   // Track running load to spread teaching across qualified lecturers instead of
   // dumping it on whoever is picked first — pick randomly among the 2 least-loaded.
   const lecLoad = {};
+  // Spread teaching by how FULL each teacher's contract is (assigned hours ÷
+  // maxHours), not by raw session count — otherwise a lecturer on a small
+  // contract gets the same share as one on a big contract and is pushed over.
+  // Picking among the 2 with the most remaining headroom keeps some randomness.
+  const loadFrac = (l) => {
+    const max = Number(l.maxHours) || 0;
+    const usedH = (lecLoad[l.id] || 0) * 2;   // ~2 h per session block
+    return max > 0 ? usedH / max : (lecLoad[l.id] || 0) / 18;   // 18 h fallback when no cap set
+  };
   const pickBalancedLec = (lecs, durSlots) => {
     if (!lecs.length) return null;
-    const sorted = [...lecs].sort((a, b) => (lecLoad[a.id] || 0) - (lecLoad[b.id] || 0));
-    const lec = sorted[Math.floor(Math.random() * Math.min(2, sorted.length))];
+    // Always assign to the qualified teacher with the most remaining headroom.
+    // Randomize only among those genuinely tied at the lowest fraction, so the
+    // load is levelled as tightly as possible (no one is pushed over while a
+    // colleague sits under-used) without deterministically favouring one id.
+    let min = Infinity;
+    lecs.forEach(l => { const f = loadFrac(l); if (f < min) min = f; });
+    const leastFull = lecs.filter(l => loadFrac(l) - min < 1e-9);
+    const lec = leastFull[Math.floor(Math.random() * leastFull.length)];
     lecLoad[lec.id] = (lecLoad[lec.id] || 0) + durSlots;
     return lec;
   };

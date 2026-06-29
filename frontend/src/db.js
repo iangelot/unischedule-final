@@ -235,14 +235,29 @@ async function seedCameroonData() {
   ]);
 
   await db.lecturers.bulkAdd([
-    { id: 'l1', name: 'Dr. Tamo Jean',      type: 'permanent', day: true,  eve: false, maxHours: 12, speciality: 'Génie Logiciel (GL)' },
-    { id: 'l2', name: 'Prof. Ndi Marie',    type: 'visiting',  day: true,  eve: true,  maxHours: 8,  speciality: 'Réseaux & Télécoms (RT)' },
-    { id: 'l3', name: 'M. Oumarou Hamidou', type: 'vacataire', day: false, eve: true,  maxHours: 6,  speciality: 'Comptabilité & Finance (CF)' },
-    { id: 'l4', name: 'Dr. Kamga Paul',     type: 'permanent', day: true,  eve: false, maxHours: 10, speciality: 'Génie Logiciel (GL)' },
-    { id: 'l5', name: 'Mme. Foko Edith',   type: 'permanent', day: true,  eve: true,  maxHours: 10, speciality: 'Design Graphique (GD)' },
-    { id: 'l6', name: 'Dr. Biya François', type: 'permanent', day: true,  eve: false, maxHours: 12, speciality: 'Sécurité des Systèmes (SSI)' },
-    { id: 'l7', name: 'M. Ngassa Robert',  type: 'vacataire', day: false, eve: true,  maxHours: 8,  speciality: 'Comptabilité & Finance (CF)' },
-    { id: 'l8', name: 'Prof. Ewane Clara', type: 'visiting',  day: true,  eve: false, maxHours: 8,  speciality: 'Réseaux & Télécoms (RT)' },
+    // Génie Logiciel (GL) — 3 groups incl. an evening cohort
+    { id: 'l1',  name: 'Dr. Tamo Jean',      type: 'permanent', day: true,  eve: true,  maxHours: 20, speciality: 'Génie Logiciel (GL)' },
+    { id: 'l4',  name: 'Dr. Kamga Paul',     type: 'permanent', day: true,  eve: true,  maxHours: 20, speciality: 'Génie Logiciel (GL)' },
+    { id: 'l9',  name: 'Dr. Mbarga Alice',   type: 'permanent', day: true,  eve: false, maxHours: 18, speciality: 'Génie Logiciel (GL)' },
+    { id: 'l10', name: 'M. Essomba Eric',    type: 'vacataire', day: false, eve: true,  maxHours: 16, speciality: 'Génie Logiciel (GL)' },
+    // Réseaux & Télécoms (RT) — 3 groups (incl. evening): keep 4 teachers so no
+    // one is pushed over their contract (3 groups ≈ 60 h/week of demand).
+    { id: 'l2',  name: 'Prof. Ndi Marie',    type: 'permanent', day: true,  eve: true,  maxHours: 20, speciality: 'Réseaux & Télécoms (RT)' },
+    { id: 'l8',  name: 'Prof. Ewane Clara',  type: 'visiting',  day: true,  eve: true,  maxHours: 20, speciality: 'Réseaux & Télécoms (RT)' },
+    { id: 'l11', name: 'M. Atangana Paul',   type: 'vacataire', day: false, eve: true,  maxHours: 16, speciality: 'Réseaux & Télécoms (RT)' },
+    { id: 'l15', name: 'Dr. Sona Brigitte',  type: 'permanent', day: true,  eve: true,  maxHours: 18, speciality: 'Réseaux & Télécoms (RT)' },
+    // Comptabilité & Finance (CF)
+    { id: 'l3',  name: 'M. Oumarou Hamidou', type: 'vacataire', day: true,  eve: true,  maxHours: 18, speciality: 'Comptabilité & Finance (CF)' },
+    { id: 'l7',  name: 'M. Ngassa Robert',   type: 'permanent', day: true,  eve: true,  maxHours: 18, speciality: 'Comptabilité & Finance (CF)' },
+    { id: 'l12', name: 'Mme. Abena Rose',    type: 'vacataire', day: false, eve: true,  maxHours: 16, speciality: 'Comptabilité & Finance (CF)' },
+    // Design Graphique (GD) & Sécurité (SSI)
+    { id: 'l5',  name: 'Mme. Foko Edith',    type: 'permanent', day: true,  eve: true,  maxHours: 20, speciality: 'Design Graphique (GD)' },
+    { id: 'l6',  name: 'Dr. Biya François',  type: 'permanent', day: true,  eve: true,  maxHours: 20, speciality: 'Sécurité des Systèmes (SSI)' },
+    // Flexible lecturers (general modules: maths, languages — any speciality).
+    // 3 of them so cross-cutting modules across all levels stay within contract.
+    { id: 'l13', name: 'Dr. Nkeng Sarah',    type: 'permanent', day: true,  eve: true,  maxHours: 20, speciality: null },
+    { id: 'l14', name: 'M. Fotso Bernard',   type: 'vacataire', day: true,  eve: true,  maxHours: 16, speciality: null },
+    { id: 'l16', name: 'Mme. Tabi Grace',    type: 'vacataire', day: true,  eve: true,  maxHours: 16, speciality: null },
   ]);
 
   await db.rooms.bulkAdd([
